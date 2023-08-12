@@ -1,3 +1,6 @@
+use std::collections::HashSet;
+
+use first::FirstBuilder;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
@@ -6,13 +9,23 @@ use syn::{
     parse::{discouraged::AnyDelimiter, Parse},
     parse_macro_input,
     token::{Brace, Bracket, Paren},
-    Ident, Token,
+    Ident, LitInt, Token,
 };
+
+mod first;
+
+type LookAheadSet<'a> = HashSet<Vec<&'a Ident>>;
 
 // Macro to define grammar rules and generate the Grammar trait
 #[proc_macro]
 pub fn grammar(input: TokenStream) -> TokenStream {
     let grammar_definition = parse_macro_input!(input as GrammarDefinition);
+
+    let first = FirstBuilder::new(&grammar_definition);
+    let first_sets = first.build();
+
+    dbg!(&first_sets);
+
     let grammar_trait = grammar_definition.generate_trait();
 
     grammar_trait.into()
@@ -22,6 +35,9 @@ pub fn grammar(input: TokenStream) -> TokenStream {
 #[derive(Debug)]
 struct GrammarDefinition {
     productions: Vec<Production>,
+    terminals: Vec<Ident>,
+    start: Ident,
+    k: u16,
 }
 
 impl GrammarDefinition {
@@ -39,19 +55,67 @@ impl GrammarDefinition {
             }
         }
     }
+
+    fn is_terminal(&self, ident: &Ident) -> bool {
+        self.terminals.contains(ident)
+    }
+
+    fn start(&self) -> Option<&Production> {
+        self.productions.iter().find(|prod| prod.lhs == self.start)
+    }
+
+    fn find_production(&self, ident: &Ident) -> Option<&Production> {
+        self.productions.iter().find(|prod| prod.lhs == *ident)
+    }
 }
 
 impl Parse for GrammarDefinition {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut start = None;
+        let mut k = 3;
+        let mut terminals = Vec::new();
+
+        while input.peek(Token![type]) {
+            input.parse::<Token![type]>()?;
+            let ident = input.parse::<Ident>()?.to_string();
+            input.parse::<Token![=]>()?;
+
+            if ident == "Terminals" {
+                terminals.push(input.parse()?);
+                while input.peek(Token!(|)) {
+                    input.parse::<Token!(|)>()?;
+                    let terminal = input.parse()?;
+                    terminals.push(terminal);
+                }
+            } else if ident == "Start" {
+                start = Some(input.parse()?);
+            } else if ident == "K" {
+                let lit = input.parse::<LitInt>()?;
+                k = lit.base10_parse::<u16>()?;
+            }
+
+            input.parse::<Token![;]>()?;
+        }
+
+        let start = match start {
+            Some(start) => start,
+            None => panic!("A start symbol must be defined"),
+        };
+
         let mut productions = Vec::new();
         while !input.is_empty() {
             let production = input.parse::<Production>()?;
             productions.push(production);
         }
-        Ok(Self { productions })
+
+        Ok(Self {
+            productions,
+            start,
+            k,
+            terminals,
+        })
     }
 }
-
 #[derive(Debug)]
 struct Production {
     lhs: Ident,
@@ -87,17 +151,23 @@ struct Alternations {
 
 impl Alternations {
     fn generate_parameter(&self) -> proc_macro2::TokenStream {
-        if self.alternations.len() == 1 {
+        let len = self.alternations.len();
+
+        if len == 1 {
             self.alternations[0].generate_parameter()
         } else {
             let inner = self
                 .alternations
                 .iter()
                 .map(|alternation| alternation.generate_parameter());
-            match self.alternations.len() {
-                2 => quote!(Either<#(#inner),*>),
-                _ => panic!("More than 16 alternations are not supported"),
-            }
+
+            let variant_name = Ident::new(&format!("Sum{len}"), Span::call_site());
+
+            quote!(#variant_name<#(#inner),*>)
+            // match self.alternations.len() {
+            //     2 => ,
+            //     _ => panic!("More than 16 alternations are not supported"),
+            // }
         }
     }
 }

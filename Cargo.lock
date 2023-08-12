@@ -3,25 +3,12 @@
 version = 3
 
 [[package]]
-name = "anon_enum"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f027311773a8509c460acc2609b0a2e8452ca9ee36e77e1642a9de8558bc2eb"
-
-[[package]]
-name = "either"
-version = "1.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a26ae43d7bcc3b814de94796a5e736d4029efb0ee900c12e2d54c993ad1a1e07"
-
-[[package]]
 name = "parasite"
 version = "0.1.0"
 dependencies = [
- "anon_enum",
- "either",
  "proc-macro2",
  "quote",
+ "sum",
  "syn",
 ]
 
@@ -42,6 +29,12 @@ checksum = "50f3b39ccfb720540debaa0164757101c08ecb8d326b15358ce76a62c7e85965"
 dependencies = [
  "proc-macro2",
 ]
+
+[[package]]
+name = "sum"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1f18991ca3310bc0cd28b47049690c6c35d9f43c9753f803c27f95eee9e9d85"
 
 [[package]]
 name = "syn"

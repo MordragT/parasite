@@ -9,8 +9,7 @@ edition = "2021"
 syn = "2.0"
 quote = "1.0"
 proc-macro2 = "1.0"
-either = "1.9.0"
-anon_enum = "1.1.0"
+sum = "0.1.7"
 
 [lib]
 proc-macro = true

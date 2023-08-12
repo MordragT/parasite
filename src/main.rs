@@ -1,5 +1,5 @@
-use either::Either;
 use parasite::grammar;
+use sum::*;
 
 struct Start {
     expr: Expr,
@@ -49,6 +49,10 @@ enum Token {
 // uses type definitions for rules
 // generates Grammar trait
 grammar! {
+    type Terminals = Number | Add | Sub | Mul | Div | LPar | RPar;
+    type Start = Start;
+    type K = 1;
+
     Start: Expr;
     Expr: Term (Add | Sub) Term;
     Term: Atomic (Mul | Div) Atomic;
@@ -76,13 +80,21 @@ pub struct Ast {
 impl Grammar for Ast {
     type Error = String;
 
-    fn start(&self, input: Expr) -> Result<Start, Self::Error> {}
+    fn start(&self, input: Expr) -> Result<Start, Self::Error> {
+        todo!()
+    }
 
-    fn expr(&self, input: (Term, Either<Add, Sub>, Term)) -> Result<Expr, Self::Error> {}
+    fn expr(&self, input: (Term, Sum2<Add, Sub>, Term)) -> Result<Expr, Self::Error> {
+        todo!()
+    }
 
-    fn term(&self, input: (Atomic, Either<Mul, Div>, Atomic)) -> Result<Term, Self::Error> {}
+    fn term(&self, input: (Atomic, Sum2<Mul, Div>, Atomic)) -> Result<Term, Self::Error> {
+        todo!()
+    }
 
-    fn atomic(&self, input: Either<Number, (LPar, Expr, RPar)>) -> Result<Atomic, Self::Error> {}
+    fn atomic(&self, input: Sum2<Number, (LPar, Expr, RPar)>) -> Result<Atomic, Self::Error> {
+        todo!()
+    }
 }
 
 fn main() {
