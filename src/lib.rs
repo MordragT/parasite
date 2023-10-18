@@ -1,30 +1,48 @@
-use std::collections::HashSet;
+#![feature(let_chains)]
 
-use first::FirstBuilder;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
+use std::collections::HashSet;
 use syn::{
     braced, bracketed, parenthesized,
-    parse::{discouraged::AnyDelimiter, Parse},
+    parse::Parse,
     parse_macro_input,
     token::{Brace, Bracket, Paren},
     Ident, LitInt, Token,
 };
 
-mod first;
+use crate::{analysis::first::FirstSets, expansion::Expander};
 
-type LookAheadSet<'a> = HashSet<Vec<&'a Ident>>;
+mod analysis;
+mod expansion;
+mod table;
+
+type IdentSet<'a> = HashSet<Vec<&'a Ident>>;
 
 // Macro to define grammar rules and generate the Grammar trait
 #[proc_macro]
 pub fn grammar(input: TokenStream) -> TokenStream {
     let grammar_definition = parse_macro_input!(input as GrammarDefinition);
+    assert!(grammar_definition.k > 0);
 
-    let first = FirstBuilder::new(&grammar_definition);
-    let first_sets = first.build();
+    let expanded = Expander::new(&grammar_definition).expand();
+    // TODO also detect indirect left recursion
+    assert!(!expanded.contains_left_recursion());
+    dbg!(&expanded);
 
-    dbg!(&first_sets);
+    let first = FirstSets::build(&expanded);
+    dbg!(&first);
+
+    // let first = FirstBuilder::new(&grammar_definition);
+    // let first_sets = first.build();
+
+    // dbg!(&first_sets);
+
+    // let follow = FollowBuilder::new(&grammar_definition, first_sets);
+    // let follow_sets = follow.build();
+
+    // dbg!(&follow_sets);
 
     let grammar_trait = grammar_definition.generate_trait();
 
@@ -36,6 +54,7 @@ pub fn grammar(input: TokenStream) -> TokenStream {
 struct GrammarDefinition {
     productions: Vec<Production>,
     terminals: Vec<Ident>,
+    nonterminals: Vec<Ident>,
     start: Ident,
     k: u16,
 }
@@ -102,9 +121,11 @@ impl Parse for GrammarDefinition {
             None => panic!("A start symbol must be defined"),
         };
 
+        let mut nonterminals = Vec::new();
         let mut productions = Vec::new();
         while !input.is_empty() {
             let production = input.parse::<Production>()?;
+            nonterminals.push(production.lhs.clone());
             productions.push(production);
         }
 
@@ -113,6 +134,7 @@ impl Parse for GrammarDefinition {
             start,
             k,
             terminals,
+            nonterminals,
         })
     }
 }
