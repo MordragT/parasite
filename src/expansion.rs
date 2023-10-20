@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::{Alternation, Alternations, Factor, GrammarDefinition, IdentSet, Production};
 use proc_macro2::Ident;
 
@@ -7,6 +9,47 @@ pub struct ExpandedGrammar {
     k: usize,
     production_ids: Vec<Option<Ident>>,
     productions: Vec<ExpandedProduction>,
+}
+
+impl fmt::Display for ExpandedGrammar {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "K = {}\nStart = {}\n\n", self.k, &self.start)?;
+        write!(f, "Productions\n")?;
+        write!(f, "===============\n")?;
+
+        for production in &self.productions {
+            let mut output = if let Some(ident) = &self.production_ids[production.id] {
+                format!("{ident}\t: ")
+            } else {
+                format!("{}\t: ", production.id)
+            };
+            for tokens in &production.alternations {
+                for token in tokens {
+                    match token {
+                        Token::Terminal(terminal) => {
+                            output.push('"');
+                            output.push_str(&terminal.to_string());
+                            output.push('"');
+                        }
+                        Token::Nonterminal(id) => {
+                            if let Some(ident) = &self.production_ids[*id] {
+                                output.push_str(&ident.to_string())
+                            } else {
+                                output.push_str(&id.to_string())
+                            }
+                        }
+                    }
+                    output.push(' ');
+                }
+                output.push_str("\n\t| ");
+            }
+            output.pop();
+            output.pop();
+
+            write!(f, "{output}\n")?;
+        }
+        Ok(())
+    }
 }
 
 impl ExpandedGrammar {
@@ -95,7 +138,7 @@ impl ExpandedGrammar {
 
 #[derive(Debug, Clone)]
 pub struct ExpandedProduction {
-    id: usize,
+    pub(crate) id: usize,
     alternations: Vec<Vec<Token>>,
 }
 

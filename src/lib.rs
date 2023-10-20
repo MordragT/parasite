@@ -1,4 +1,5 @@
 #![feature(let_chains)]
+#![feature(exact_size_is_empty)]
 
 use proc_macro::TokenStream;
 use proc_macro2::Span;
@@ -12,7 +13,10 @@ use syn::{
     Ident, LitInt, Token,
 };
 
-use crate::{analysis::first::FirstSets, expansion::Expander};
+use crate::{
+    analysis::{first::FirstSets, follow::FollowSets},
+    expansion::Expander,
+};
 
 mod analysis;
 mod expansion;
@@ -29,10 +33,13 @@ pub fn grammar(input: TokenStream) -> TokenStream {
     let expanded = Expander::new(&grammar_definition).expand();
     // TODO also detect indirect left recursion
     assert!(!expanded.contains_left_recursion());
-    dbg!(&expanded);
+    println!("{expanded}");
 
     let first = FirstSets::build(&expanded);
-    dbg!(&first);
+    println!("{first}");
+
+    let follow = FollowSets::build(&expanded, &first);
+    println!("{follow}");
 
     // let first = FirstBuilder::new(&grammar_definition);
     // let first_sets = first.build();

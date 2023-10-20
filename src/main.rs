@@ -51,7 +51,7 @@ enum Token {
 grammar! {
     type Terminals = Number | Add | Sub | Mul | Div | LPar | RPar;
     type Start = Start;
-    type K = 1;
+    type K = 2;
 
     Start: Expr;
     Expr: Term (Add | Sub) Term;

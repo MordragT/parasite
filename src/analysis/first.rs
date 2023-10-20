@@ -1,46 +1,44 @@
-use core::panic;
-use proc_macro2::Ident;
-use std::collections::{HashMap, VecDeque};
-
 use crate::expansion::{ExpandedGrammar, Token};
+use proc_macro2::Ident;
+use std::{
+    collections::{HashMap, VecDeque},
+    fmt,
+};
 
-#[derive(Debug)]
-struct StackItem<'a> {
+#[derive(Debug, Clone, PartialEq)]
+struct Item<'a> {
     tokens: VecDeque<&'a Token>,
-    item: Vec<&'a Ident>,
-    id: usize,
-    pos: usize,
+    item: FirstItem<'a>,
 }
 
-#[derive(Debug, Clone)]
-pub struct FirstItem<'a> {
-    item: Vec<&'a Ident>,
-    finished: bool,
-}
-
-impl<'a> FirstItem<'a> {
-    fn done(&self) -> usize {
-        self.item.len()
-    }
-}
-
-// one vec per alternation
+type FirstItem<'a> = Vec<&'a Ident>;
 type FirstSet<'a> = Vec<FirstItem<'a>>;
 
 #[derive(Debug, Clone)]
 pub struct FirstSets<'a> {
-    sets: HashMap<usize, FirstSet<'a>>,
+    pub(crate) sets: HashMap<usize, FirstSet<'a>>,
 }
 
-impl<'a> FirstSets<'a> {
-    fn alloc(&mut self, id: usize) -> usize {
-        let set = self.sets.get_mut(&id).unwrap();
-        let pos = set.len();
-        set.push(FirstItem {
-            item: Vec::new(),
-            finished: false,
-        });
-        pos
+impl<'a> fmt::Display for FirstSets<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "First Sets\n")?;
+        write!(f, "==============\n")?;
+
+        for (id, set) in &self.sets {
+            let mut output = format!("{id}\t: ");
+            for item in set {
+                for ident in item {
+                    output.push_str(&ident.to_string());
+                    output.push(' ');
+                }
+                output.pop();
+                output.push_str("\n\t, ");
+            }
+            output.pop();
+            output.pop();
+            write!(f, "{output}\n")?;
+        }
+        Ok(())
     }
 }
 
@@ -48,136 +46,95 @@ impl<'a> FirstSets<'a> {
 // Meaning that there needs to be some way to partially update one production and then check from another if the required k is already computed
 impl<'a> FirstSets<'a> {
     pub fn build(grammar: &'a ExpandedGrammar) -> Self {
-        let mut sets = HashMap::new();
-        let mut stack = VecDeque::new();
-
         // populate left terminals of productions
-        for (id, production) in grammar.iter_productions().enumerate() {
-            let mut set = Vec::new();
+        let mut derivations = grammar
+            .iter_productions()
+            .map(|production| {
+                production
+                    .alternations()
+                    .iter()
+                    .map(|tokens| {
+                        let mut to_process = tokens.into_iter().take(grammar.k());
 
-            for (pos, tokens) in production.alternations().iter().enumerate() {
-                let mut to_process = tokens.into_iter().take(grammar.k());
+                        let mut terminals = Vec::new();
+                        let mut tokens = VecDeque::new();
 
-                let mut terminals = Vec::new();
-                let mut tokens = VecDeque::new();
-
-                while let Some(token) = to_process.next() {
-                    match token {
-                        Token::Terminal(ident) => terminals.push(ident),
-                        _ => {
-                            tokens.push_back(token);
-                            break;
-                        }
-                    }
-                }
-
-                tokens.extend(to_process);
-
-                let finished = tokens.len() == 0;
-                if !finished {
-                    stack.push_back(StackItem {
-                        tokens,
-                        item: terminals.clone(),
-                        id,
-                        pos,
-                    });
-                }
-                set.push(FirstItem {
-                    item: terminals,
-                    finished,
-                });
-            }
-
-            sets.insert(id, set);
-        }
-
-        while let Some(StackItem {
-            mut tokens,
-            mut item,
-            id,
-            pos,
-        }) = stack.pop_front()
-        {
-            // dbg!(&grammar);
-            // dbg!(&sets);
-            // dbg!(&stack);
-
-            let mut alloc = Vec::new();
-
-            while let Some(token) = tokens.pop_front() && item.len() < grammar.k() {
-                let todo = grammar.k() - item.len();
-
-                match token {
-                    Token::Terminal(ident) => {
-                        item.push(ident);
-                    }
-                    Token::Nonterminal(prod_id) => {
-                        let set = sets[prod_id].as_slice();
-
-                        if set.iter().all(|item| item.finished || item.done() >= todo) {
-                            let mut set_items = set.into_iter();
-                            let first_item = set_items.next();
-
-                            while let Some(set_item) = set_items.next() {
-                                let mut item = item.clone();
-                                item.extend(set_item.item.iter().take(todo));
-
-                                let finished = tokens.is_empty() || item.len() >= grammar.k();
-                                alloc.push(FirstItem {
-                                    item: item.clone(),
-                                    finished,
-                                });
-
-                                let pos = sets[&id].len() + alloc.len();
-                                if !finished {
-                                    stack.push_front(StackItem {
-                                        tokens: tokens.clone(),
-                                        item,
-                                        id,
-                                        pos
-                                    });
+                        while let Some(token) = to_process.next() {
+                            match token {
+                                Token::Terminal(ident) => terminals.push(ident),
+                                _ => {
+                                    tokens.push_back(token);
+                                    break;
                                 }
+                            }
+                        }
 
+                        tokens.extend(to_process);
+
+                        Item {
+                            tokens,
+                            item: terminals,
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
+        let mut queue = (0..derivations.len()).collect::<VecDeque<_>>();
+
+        while let Some(id) = queue.pop_front() {
+            let to_process = derivations[id]
+                .iter_mut()
+                .map(|item| item.tokens.pop_front())
+                .collect::<Vec<_>>();
+
+            if to_process.iter().all(|token| token.is_none()) {
+                continue;
+            }
+
+            for (item_id, token) in to_process.into_iter().enumerate() {
+                match token {
+                    Some(Token::Terminal(terminal)) => derivations[id][item_id].item.push(terminal),
+                    Some(Token::Nonterminal(other_id)) => {
+                        let todo =
+                            match grammar.k().checked_sub(derivations[id][item_id].item.len()) {
+                                Some(t) => t,
+                                None => continue,
+                            };
+
+                        let mut to_push = Vec::new();
+                        for other_item in &derivations[*other_id] {
+                            let mut item = derivations[id][item_id].clone();
+                            item.item.extend(other_item.item.iter().take(todo));
+
+                            if let Some(todo) = grammar.k().checked_sub(item.item.len()) {
+                                for token in other_item.tokens.iter().take(todo).rev() {
+                                    item.tokens.push_front(token);
+                                }
+                                queue.push_back(id);
                             }
-                            if let Some(set_item) = first_item {
-                                dbg!("test");
-                                item.extend(set_item.item.iter().take(todo));
-                            }
-                        } else {
-                            // push current on stack, the unfinished should already be on the stack
-                            tokens.push_front(token);
-                            stack.push_back(StackItem {
-                                tokens: tokens.clone(),
-                                item: item.clone(),
-                                id,
-                                pos,
-                            });
-                            break;
+                            to_push.push(item);
+                        }
+                        to_push.dedup_by(|a, b| a.eq(&b));
+
+                        if let Some(item) = to_push.pop() {
+                            derivations[id][item_id] = item;
+                        }
+
+                        for item in to_push {
+                            derivations[id].push(item);
                         }
                     }
+                    None => continue,
                 }
-
-            }
-
-            let finished = tokens.is_empty() || item.len() >= grammar.k();
-            let set = sets.get_mut(&id).unwrap();
-            set[pos] = FirstItem {
-                item: item.clone(),
-                finished,
-            };
-            for item in alloc {
-                set.push(item)
-            }
-
-            if !finished {
-                stack.push_front(StackItem {
-                    tokens,
-                    item,
-                    id,
-                    pos,
-                });
             }
         }
+
+        let sets = derivations
+            .into_iter()
+            .enumerate()
+            .map(|(id, set)| (id, set.into_iter().map(|item| item.item).collect()))
+            .collect();
 
         Self { sets }
     }

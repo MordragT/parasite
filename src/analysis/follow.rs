@@ -1,184 +1,162 @@
+use crate::expansion::{ExpandedGrammar, Token};
+use proc_macro2::Ident;
 use std::{
     borrow::Cow,
     collections::{HashMap, VecDeque},
+    fmt,
 };
 
-use proc_macro2::Ident;
-use sum::Sum2;
+use super::first::FirstSets;
 
-use crate::{
-    first::FirstSets, Alternation, Alternations, Factor, GrammarDefinition, IdentSet, Production,
-};
+#[derive(Debug, Clone, PartialEq)]
+struct Item<'a> {
+    units: VecDeque<Unit<'a>>,
+    item: FollowItem<'a>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum Unit<'a> {
+    First(&'a Token),
+    Follow(usize),
+}
+
+type FollowItem<'a> = Vec<&'a Ident>;
+type FollowSet<'a> = Vec<FollowItem<'a>>;
 
 #[derive(Debug, Clone)]
 pub struct FollowSets<'a> {
-    sets: HashMap<&'a Ident, IdentSet<'a>>,
-    tails: VecDeque<(&'a Ident, &'a Ident)>,
+    pub(crate) sets: HashMap<usize, FollowSet<'a>>,
+}
+
+impl<'a> fmt::Display for FollowSets<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Follow Sets\n")?;
+        write!(f, "==============\n")?;
+
+        for (id, set) in &self.sets {
+            let mut output = format!("{id}\t: ");
+            for item in set {
+                for ident in item {
+                    output.push_str(&ident.to_string());
+                    output.push(' ');
+                }
+                output.pop();
+                output.push_str("\n\t, ");
+            }
+            output.pop();
+            output.pop();
+            write!(f, "{output}\n")?;
+        }
+        Ok(())
+    }
 }
 
 impl<'a> FollowSets<'a> {
-    pub fn new() -> Self {
-        Self {
-            sets: HashMap::new(),
-            tails: VecDeque::new(),
-        }
-    }
+    pub fn build(grammar: &'a ExpandedGrammar, first_sets: &FirstSets<'a>) -> Self {
+        let mut derivations = vec![vec![]; first_sets.sets.len()];
 
-    pub fn push_tail(&mut self, ident: &'a Ident, tail: &'a Ident) {
-        self.tails.push_back((ident, tail));
-    }
+        // TODO remove iter_productions in favor of simple productions getter
+        for production in grammar.iter_productions() {
+            for tokens in production.alternations().iter() {
+                let mut to_process = tokens.into_iter();
 
-    pub fn insert(&mut self, ident: &'a Ident, set: IdentSet<'a>) {
-        self.sets.insert(ident, set);
-    }
-
-    pub fn get(&'a self, ident: &'a Ident) -> Option<&'a IdentSet<'a>> {
-        self.sets.get(ident)
-    }
-
-    pub fn get_mut(&'a mut self, ident: &'a Ident) -> Option<&'a mut IdentSet<'a>> {
-        self.sets.get_mut(ident)
-    }
-
-    pub fn union(&mut self, ident: &'a Ident, set: IdentSet<'a>) {
-        if let Some(ident_set) = self.sets.get_mut(ident) {
-            ident_set.extend(set);
-        } else {
-            self.sets.insert(ident, set);
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct FollowBuilder<'a> {
-    grammar: &'a GrammarDefinition,
-    first: FirstSets<'a>,
-}
-
-impl<'a> FollowBuilder<'a> {
-    pub(crate) fn new(grammar: &'a GrammarDefinition, first: FirstSets<'a>) -> Self {
-        Self { grammar, first }
-    }
-
-    pub(crate) fn build(&'a self) -> FollowSets<'a> {
-        let mut cache = FollowSets::new();
-
-        for nonterminal in &self.grammar.nonterminals {
-            for production in &self.grammar.productions {
-                self.normal(
-                    &production.lhs,
-                    &production.alternations,
-                    nonterminal,
-                    &mut cache,
-                );
-            }
-        }
-
-        while let Some((left, tail)) = cache.tails.pop_front() {
-            if cache.tails.iter().find(|(l, _)| tail == *l).is_none() {
-                let set = cache.sets.get(tail).unwrap().clone();
-                cache.sets.get_mut(left).unwrap().extend(set);
-            } else if left != tail {
-                cache.tails.push_back((left, tail));
-            }
-        }
-
-        cache
-    }
-
-    fn normal(
-        &'a self,
-        left: &'a Ident,
-        alternations: &'a Alternations,
-        nonterminal: &'a Ident,
-        cache: &mut FollowSets<'a>,
-    ) {
-        for alternation in &alternations.alternations {
-            let mut factor_iter = alternation.factors.iter();
-            let mut success = false;
-
-            while let Some(factor) = factor_iter.next() {
-                match factor {
-                    Factor::Group(alternations)
-                    | Factor::Repeat(alternations)
-                    | Factor::Optional(alternations) => {
-                        self.normal(left, alternations, nonterminal, cache);
+                while let Some(token) = to_process.next() {
+                    if let Token::Nonterminal(id) = token {
+                        let units = if to_process.is_empty() {
+                            let mut units = VecDeque::new();
+                            units.push_back(Unit::Follow(production.id));
+                            units
+                        } else {
+                            to_process
+                                .clone()
+                                .take(grammar.k())
+                                .map(Unit::First)
+                                .collect()
+                        };
+                        let item = Item {
+                            units,
+                            item: Vec::new(),
+                        };
+                        derivations[*id].push(item);
                     }
-                    Factor::Symbol(ident) => {
-                        if ident == nonterminal {
-                            success = true;
-                            break;
+                }
+            }
+        }
+
+        let mut queue = (0..derivations.len()).collect::<VecDeque<_>>();
+
+        while let Some(id) = queue.pop_front() {
+            let to_process = derivations[id]
+                .iter_mut()
+                .map(|item| item.units.pop_front())
+                .collect::<Vec<_>>();
+
+            if to_process.iter().all(|token| token.is_none()) {
+                continue;
+            }
+
+            for (item_id, unit) in to_process.into_iter().enumerate() {
+                let todo = match grammar.k().checked_sub(derivations[id][item_id].item.len()) {
+                    Some(t) => t,
+                    None => continue,
+                };
+
+                match unit {
+                    Some(Unit::First(Token::Terminal(terminal))) => {
+                        derivations[id][item_id].item.push(terminal)
+                    }
+                    Some(Unit::First(Token::Nonterminal(other_id))) => {
+                        let mut to_push = Vec::new();
+                        for other_item in &first_sets.sets[other_id] {
+                            let mut item = derivations[id][item_id].clone();
+                            item.item.extend(other_item.iter().take(todo));
+                            to_push.push(item);
+                        }
+                        to_push.dedup_by(|a, b| a.eq(&b));
+
+                        if let Some(item) = to_push.pop() {
+                            derivations[id][item_id] = item;
+                        }
+
+                        for item in to_push {
+                            derivations[id].push(item);
                         }
                     }
-                }
-            }
+                    Some(Unit::Follow(other_id)) => {
+                        let mut to_push = Vec::new();
+                        for other_item in &derivations[other_id] {
+                            let mut item = derivations[id][item_id].clone();
+                            item.item.extend(other_item.item.iter().take(todo));
 
-            let mut set = IdentSet::new();
+                            if let Some(todo) = grammar.k().checked_sub(item.item.len()) {
+                                for unit in other_item.units.iter().take(todo).rev() {
+                                    item.units.push_front(unit.clone());
+                                }
+                                queue.push_back(id);
+                            }
+                            to_push.push(item);
+                        }
+                        to_push.dedup_by(|a, b| a.eq(&b));
 
-            if factor_iter.len() == 0 && success {
-                cache.push_tail(left, nonterminal);
-            }
+                        if let Some(item) = to_push.pop() {
+                            derivations[id][item_id] = item;
+                        }
 
-            for factor in factor_iter {
-                set = self.factor(factor, set);
-            }
-
-            cache.union(nonterminal, set);
-        }
-    }
-
-    fn factor(&'a self, factor: &'a Factor, mut set: IdentSet<'a>) -> IdentSet<'a> {
-        match factor {
-            Factor::Group(alternations)
-            | Factor::Repeat(alternations)
-            | Factor::Optional(alternations) => {
-                let orig_set = set.clone();
-
-                for alternation in &alternations.alternations {
-                    let mut alternation_set = orig_set.clone();
-
-                    for factor in &alternation.factors {
-                        alternation_set = self.factor(factor, alternation_set);
+                        for item in to_push {
+                            derivations[id].push(item);
+                        }
                     }
-
-                    set.extend(alternation_set);
+                    None => continue,
                 }
-                set
-            }
-            Factor::Symbol(ident) => self.symbol(ident, set),
-        }
-    }
-
-    fn symbol(&'a self, ident: &'a Ident, mut set: IdentSet<'a>) -> IdentSet<'a> {
-        if self.grammar.is_terminal(ident) {
-            if set.is_empty() {
-                set.insert(vec![ident]);
-                set
-            } else {
-                set.into_iter()
-                    .map(|mut item| {
-                        item.push(ident);
-                        item
-                    })
-                    .collect()
-            }
-        } else {
-            let first = self.first.get(ident).unwrap();
-
-            if set.is_empty() {
-                first.clone()
-            } else {
-                set.into_iter()
-                    .map(|item| {
-                        first.iter().map(move |first_item| {
-                            let mut item = item.clone();
-                            item.extend(first_item);
-                            item
-                        })
-                    })
-                    .flatten()
-                    .collect()
             }
         }
+
+        let sets = derivations
+            .into_iter()
+            .enumerate()
+            .map(|(id, set)| (id, set.into_iter().map(|item| item.item).collect()))
+            .collect();
+
+        Self { sets }
     }
 }
