@@ -51,7 +51,7 @@ enum Token {
 // uses type definitions for rules
 // generates Grammar trait
 grammar! {
-    type Terminals = Number | Add | Sub | Mul | Div | LPar | RPar;
+    type Terminals = Number | Add | Sub | Mul | Div | LPar | RPar | Semicolon;
     type Start = Start;
     type K = 1;
 

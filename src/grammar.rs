@@ -3,13 +3,18 @@ use std::fmt;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 
-use crate::analysis::{first::FirstSets, follow::FollowSets};
+use crate::{
+    analysis::{first::FirstSets, follow::FollowSets},
+    ast::NodeIndex,
+};
 
 #[derive(Debug, Clone)]
 pub struct Grammar {
     pub(crate) start: Ident,
     pub(crate) k: usize,
     pub(crate) productions: Vec<Production>,
+    pub(crate) derived: Vec<Ident>,
+    pub(crate) terminals: Vec<Ident>,
 }
 
 impl fmt::Display for Grammar {
@@ -19,7 +24,7 @@ impl fmt::Display for Grammar {
         write!(f, "===============\n")?;
 
         for (id, production) in self.productions.iter().enumerate() {
-            let mut output = format!("{}\t: ", id);
+            let mut output = format!("{}({:?})\t: ", id, production.lhs);
             for tokens in &production.alternations {
                 for token in tokens {
                     match token {
@@ -50,14 +55,6 @@ impl fmt::Display for Grammar {
 }
 
 impl Grammar {
-    pub fn new(start: Ident, k: usize) -> Self {
-        Self {
-            start,
-            k,
-            productions: Vec::new(),
-        }
-    }
-
     pub fn k(&self) -> usize {
         self.k
     }
@@ -80,13 +77,13 @@ impl Grammar {
         id
     }
 
-    pub fn insert_empty(&mut self) -> usize {
-        let id = self.productions.len();
+    // pub fn insert_empty(&mut self) -> usize {
+    //     let id = self.productions.len();
 
-        self.productions.push(Production::empty());
+    //     self.productions.push(Production::empty());
 
-        id
-    }
+    //     id
+    // }
 
     pub fn find_id(&self, ident: &Ident) -> Option<usize> {
         self.productions
@@ -139,17 +136,15 @@ impl Grammar {
 pub struct Production {
     pub(crate) lhs: ProductionObject,
     pub(crate) alternations: Vec<Vec<Token>>,
+    pub(crate) index: NodeIndex,
 }
 
 impl Production {
-    pub fn new(lhs: ProductionObject, alternations: Vec<Vec<Token>>) -> Self {
-        Self { lhs, alternations }
-    }
-
-    pub fn empty() -> Self {
+    pub fn new(lhs: ProductionObject, alternations: Vec<Vec<Token>>, index: NodeIndex) -> Self {
         Self {
-            lhs: ProductionObject::None,
-            alternations: Vec::new(),
+            lhs,
+            alternations,
+            index,
         }
     }
 
@@ -179,7 +174,6 @@ pub enum ProductionObject {
     Group(Vec<ProductionObject>),
     Optional(Vec<ProductionObject>),
     Single(Ident),
-    None,
 }
 
 impl ProductionObject {

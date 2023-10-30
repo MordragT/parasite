@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use syn::{
     braced, bracketed, parenthesized,
     parse::Parse,
@@ -19,168 +21,191 @@ pub struct GrammarAst {
 
 impl GrammarAst {
     pub(crate) fn expand(self) -> Grammar {
-        type StackItem<'a> = (Node<'a>, usize);
+        let mut productions = Vec::new();
+        let mut table = HashMap::new();
 
-        let mut expanded = Grammar::new(self.start.clone(), self.k as usize);
-
-        let start_ident = self.start.clone();
-        let start_id = expanded.insert(Production::new(
-            ProductionObject::Single(start_ident.clone()),
-            Vec::new(),
-        ));
-
-        let mut stack: Vec<StackItem> = Vec::new();
-        if let Some(start) = self.start_production() {
-            stack.push((Node::Alternations(&start.alternations), start_id));
+        if let Node::Production(production, index) = self.start_production() {
+            productions.push(Production::new(
+                ProductionObject::Single(production.lhs.clone()),
+                Vec::new(),
+                index.clone(),
+            ));
+            table.insert(index, 0);
         }
 
-        while let Some((node, id)) = stack.pop() {
+        for node in self.iter() {
             match node {
-                Node::Production(production) => {
-                    stack.push((Node::Alternations(&production.alternations), id));
+                Node::Production(_, ref index) => {
+                    assert!(table.contains_key(index));
                 }
-                Node::Alternations(alternations) => {
+                Node::Alternations(alternations, ref index) => {
+                    let id = table[index];
                     let alternations = alternations.alternations.as_slice();
 
                     if let [alternation] = alternations {
-                        stack.push((Node::Alternation(alternation, 0), id));
+                        let mut index = index.clone();
+                        index.push(0);
 
-                        expanded.get_mut(id).alternations.push(Vec::new());
+                        table.insert(index, id);
+                        productions[id].alternations.push(Vec::new());
                     } else {
-                        for alternation in alternations {
-                            let inner_id = expanded.insert(Production::new(
+                        for (i, alternation) in alternations.iter().enumerate() {
+                            let mut index = index.clone();
+                            index.push(i);
+
+                            let prod = Production::new(
                                 ProductionObject::Group(Vec::new()),
                                 vec![vec![]],
-                            ));
+                                index.clone(),
+                            );
+                            let prod_id = productions.len();
 
-                            stack.push((Node::Alternation(alternation, 0), inner_id));
-                            expanded
-                                .get_mut(id)
+                            table.insert(index, prod_id);
+                            productions.push(prod);
+                            productions[id]
                                 .alternations
-                                .push(vec![Token::Derived(inner_id)]);
+                                .push(vec![Token::Derived(prod_id)]);
                         }
                     }
                 }
-                Node::Alternation(alternation, alternation_id) => {
-                    for factor in alternation.factors.iter().rev() {
-                        stack.push((Node::Factor(factor, alternation_id), id));
-                    }
+                Node::Alternation(alternation, ref index) => {
+                    // original production
+                    assert!(table.contains_key(&index[0..index.len() - 1]));
+                    // production from alternation
+                    assert!(table.contains_key(index));
                 }
-                Node::Factor(factor, alternation_id) => match factor {
-                    FactorNode::Group(alternations) => {
-                        let group_id = expanded.insert({
-                            Production::new(ProductionObject::Group(Vec::new()), Vec::new())
-                        });
-                        stack.push((Node::Alternations(alternations), group_id));
-                        expanded
-                            .get_mut(id)
-                            .alternation_mut(alternation_id)
-                            .push(Token::Derived(group_id));
-                    }
-                    FactorNode::Repeat(alternations) => {
-                        let inner_repeat_id = expanded.insert_empty();
-                        let repeat_id = expanded.insert_with(|repeat_id| {
-                            Production::new(
+                Node::Factor(factor, ref index) => {
+                    // production from alternation
+                    let id = table[&index[0..index.len() - 1]];
+
+                    match factor {
+                        FactorNode::Group(alternations) => {
+                            let mut index = index.clone();
+                            index.push(0);
+                            let prod_id = productions.len();
+                            let prod = Production::new(
+                                ProductionObject::Group(Vec::new()),
+                                Vec::new(),
+                                index.clone(),
+                            );
+                            table.insert(index, prod_id);
+                            productions.push(prod);
+
+                            // diverging alternations are only created in Node::Alternations and point directly to another production
+                            productions[id].alternations[0].push(Token::Derived(prod_id));
+                        }
+                        FactorNode::Repeat(alternations) => {
+                            let mut inner_idx = index.clone();
+                            inner_idx.push(0);
+                            let inner_id = productions.len();
+                            let inner = Production::new(
+                                ProductionObject::Group(Vec::new()),
+                                Vec::new(),
+                                inner_idx.clone(),
+                            );
+                            table.insert(inner_idx, inner_id);
+                            productions.push(inner);
+
+                            let prod_id = productions.len();
+                            let prod = Production::new(
                                 ProductionObject::Repeat(Vec::new()),
                                 vec![
-                                    vec![
-                                        Token::Derived(inner_repeat_id),
-                                        Token::Derived(repeat_id),
-                                    ],
+                                    vec![Token::Derived(inner_id), Token::Derived(prod_id)],
                                     vec![],
                                 ],
-                            )
-                        });
+                                index.clone(),
+                            );
+                            table.insert(index.clone(), prod_id);
+                            productions.push(prod);
 
-                        stack.push((Node::Alternations(alternations), inner_repeat_id));
-                        expanded
-                            .get_mut(id)
-                            .alternation_mut(alternation_id)
-                            .push(Token::Derived(repeat_id));
-                    }
-                    FactorNode::Optional(alternations) => {
-                        let inner_optional_id = expanded.insert_empty();
-                        let optional_id = expanded.insert({
-                            Production::new(
-                                ProductionObject::Optional(Vec::new()),
-                                vec![vec![Token::Derived(inner_optional_id)], vec![]],
-                            )
-                        });
-
-                        stack.push((Node::Alternations(alternations), inner_optional_id));
-                        expanded
-                            .get_mut(id)
-                            .alternation_mut(alternation_id)
-                            .push(Token::Derived(optional_id));
-                    }
-                    FactorNode::Symbol(ident) => {
-                        if self.is_terminal(ident) {
-                            expanded
-                                .get_mut(id)
-                                .alternation_mut(alternation_id)
-                                .push(Token::Terminal(ident.clone()));
-                        } else if let Some(production_id) = expanded.find_id(ident) {
-                            expanded
-                                .get_mut(id)
-                                .alternation_mut(alternation_id)
-                                .push(Token::Derived(production_id));
-                        } else {
-                            let production = self.find_production(ident).unwrap();
-                            let production_id = expanded.insert(Production::new(
-                                ProductionObject::Single(ident.clone()),
-                                Vec::new(),
-                            ));
-
-                            stack.push((Node::Production(production), production_id));
-                            expanded
-                                .get_mut(id)
-                                .alternation_mut(alternation_id)
-                                .push(Token::Derived(production_id));
+                            productions[id].alternations[0].push(Token::Derived(prod_id));
                         }
-                        expanded
-                            .get_mut(id)
-                            .lhs
-                            .push(ProductionObject::Single(ident.clone()));
+                        FactorNode::Optional(alternations) => {
+                            let mut inner_idx = index.clone();
+                            inner_idx.push(0);
+                            let inner_id = productions.len();
+                            let inner = Production::new(
+                                ProductionObject::Optional(Vec::new()),
+                                Vec::new(),
+                                inner_idx.clone(),
+                            );
+                            table.insert(inner_idx, inner_id);
+                            productions.push(inner);
+
+                            let prod_id = productions.len();
+                            let prod = Production::new(
+                                ProductionObject::Repeat(Vec::new()),
+                                vec![vec![Token::Derived(inner_id)], vec![]],
+                                index.clone(),
+                            );
+                            table.insert(index.clone(), prod_id);
+                            productions.push(prod);
+
+                            productions[id].alternations[0].push(Token::Derived(prod_id));
+                        }
+                        FactorNode::Symbol(ident) => {
+                            if self.is_terminal(ident) {
+                                productions[id].alternations[0]
+                                    .push(Token::Terminal(ident.clone()));
+                            } else if let Some(prod_id) = productions.iter().position(|prod| {
+                                prod.lhs == ProductionObject::Single(ident.clone())
+                            }) {
+                                productions[id].alternations[0].push(Token::Derived(prod_id))
+                            } else if let Some(production) = self.find_production(ident) {
+                                let prod = Production::new(
+                                    ProductionObject::Single(ident.clone()),
+                                    Vec::new(),
+                                    production.index().clone(),
+                                );
+                                let prod_id = productions.len();
+                                table.insert(production.index().clone(), prod_id);
+                                productions.push(prod);
+
+                                productions[id].alternations[0].push(Token::Derived(prod_id))
+                            } else {
+                                panic!("Identifier is no primitive terminal nor derivated: {ident}")
+                            }
+                            productions[id]
+                                .lhs
+                                .push(ProductionObject::Single(ident.clone()));
+                        }
                     }
-                },
+                }
             }
         }
 
-        dbg!(&expanded);
+        let Self {
+            productions: _,
+            terminals,
+            derived,
+            start,
+            k,
+        } = self;
 
-        expanded
+        Grammar {
+            start,
+            k: k as usize,
+            productions,
+            terminals,
+            derived,
+        }
     }
 
     fn iter(&self) -> impl Iterator<Item = Node> {
-        let mut stack = vec![Node::Production(self.start_production().unwrap())];
+        self.into_iter()
+    }
 
-        std::iter::from_fn(move || {
-            while let Some(node) = stack.pop() {
-                match node {
-                    Node::Production(production) => {
-                        stack.push(Node::Alternations(&production.alternations))
-                    }
-                    Node::Alternations(alternations) => {
-                        for alternation in &alternations.alternations {
-                            stack.push(Node::Alternation(alternation))
-                        }
-                    }
-                    Node::Alternation(alternation) => {
-                        for factor in alternation.factors.iter().rev() {
-                            stack.push(Node::Factor(factor))
-                        }
-                    }
-                    Node::Factor(factor) => match factor {
-                        FactorNode::Group(group) => stack.push(Node::Alternations(group)),
-                        FactorNode::Optional(optional) => stack.push(Node::Alternations(optional)),
-                        FactorNode::Repeat(repeat) => stack.push(Node::Alternations(repeat)),
-                        FactorNode::Symbol(_) => (),
-                    },
-                }
-                return Some(node);
-            }
-            None
+    fn iter_symbols(&self) -> impl Iterator<Item = (&Ident, NodeIndex)> {
+        self.iter().filter_map(|node| match node {
+            Node::Factor(FactorNode::Symbol(ident), idx) => Some((ident, idx)),
+            _ => None,
         })
+    }
+
+    fn get(&self, mut index: NodeIndex) -> Node {
+        let id = index.remove(0);
+
+        self.productions[id].get(index)
     }
 
     fn is_terminal(&self, ident: &Ident) -> bool {
@@ -191,12 +216,88 @@ impl GrammarAst {
         self.derived.contains(ident)
     }
 
-    fn start_production(&self) -> Option<&ProductionNode> {
-        self.productions.iter().find(|prod| prod.lhs == self.start)
+    fn start_production(&self) -> Node {
+        self.find_production(&self.start).unwrap()
     }
 
-    fn find_production(&self, ident: &Ident) -> Option<&ProductionNode> {
-        self.productions.iter().find(|prod| prod.lhs == *ident)
+    fn find_production(&self, ident: &Ident) -> Option<Node> {
+        self.productions.iter().enumerate().find_map(|(id, prod)| {
+            if &prod.lhs == ident {
+                Some(Node::Production(prod, vec![id]))
+            } else {
+                None
+            }
+        })
+    }
+}
+
+impl<'a> IntoIterator for &'a GrammarAst {
+    type IntoIter = GrammarAstIter<'a>;
+    type Item = Node<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let stack = vec![self.start_production()];
+        let visited = vec![false; self.productions.len()];
+
+        GrammarAstIter {
+            ast: self,
+            stack,
+            visited,
+        }
+    }
+}
+
+pub struct GrammarAstIter<'a> {
+    ast: &'a GrammarAst,
+    stack: Vec<Node<'a>>,
+    visited: Vec<bool>,
+}
+
+impl<'a> Iterator for GrammarAstIter<'a> {
+    type Item = Node<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(node) = self.stack.pop() {
+            match node {
+                Node::Production(production, ref idx) => {
+                    self
+                    .stack
+                    .push(Node::Alternations(&production.alternations, idx.clone()));
+                    self.visited[idx[0]] = true;
+                }
+                Node::Alternations(alternations, ref idx) => {
+                    for (id, alternation) in alternations.alternations.iter().enumerate() {
+                        let mut index = idx.clone();
+                        index.push(id);
+                        self.stack.push(Node::Alternation(alternation, index))
+                    }
+                }
+                Node::Alternation(alternation, ref idx) => {
+                    for (id, factor) in alternation.factors.iter().enumerate().rev() {
+                        let mut index = idx.clone();
+                        index.push(id);
+                        self.stack.push(Node::Factor(factor, index))
+                    }
+                }
+                Node::Factor(factor, ref index) => match factor {
+                    FactorNode::Group(alternations)
+                    | FactorNode::Optional(alternations)
+                    | FactorNode::Repeat(alternations) => {
+                        let mut index = index.clone();
+                        index.push(0);
+                        self.stack.push(Node::Alternations(alternations, index))
+                    }
+                    FactorNode::Symbol(ident) => {
+                        if let Some(production) = self.ast.find_production(ident) && !self.visited[production.index()[0]] {
+                            self.stack.push(production)
+                        }
+                    }
+                },
+            }
+            Some(node)
+        } else {
+            None
+        }
     }
 }
 
@@ -251,19 +352,42 @@ impl Parse for GrammarAst {
     }
 }
 
+pub type NodeIndex = Vec<usize>;
+
 #[derive(Debug)]
-enum Node<'a> {
-    Production(&'a ProductionNode),
-    Alternations(&'a AlternationsNode),
-    Alternation(&'a AlternationNode),
-    Factor(&'a FactorNode),
+pub enum Node<'a> {
+    Production(&'a ProductionNode, NodeIndex),
+    Alternations(&'a AlternationsNode, NodeIndex),
+    Alternation(&'a AlternationNode, NodeIndex),
+    Factor(&'a FactorNode, NodeIndex),
+}
+
+impl<'a> Node<'a> {
+    pub fn index(&self) -> &NodeIndex {
+        match self {
+            Self::Production(_, idx)
+            | Self::Alternation(_, idx)
+            | Self::Alternations(_, idx)
+            | Self::Factor(_, idx) => idx,
+        }
+    }
 }
 
 #[derive(Debug)]
-struct ProductionNode {
+pub struct ProductionNode {
     lhs: Ident,
     /// split by |
     alternations: AlternationsNode,
+}
+
+impl ProductionNode {
+    fn get(&self, index: NodeIndex) -> Node {
+        if !index.is_empty() {
+            self.alternations.get(index)
+        } else {
+            Node::Production(self, Vec::new())
+        }
+    }
 }
 
 impl Parse for ProductionNode {
@@ -278,8 +402,19 @@ impl Parse for ProductionNode {
 }
 
 #[derive(Debug)]
-struct AlternationsNode {
+pub struct AlternationsNode {
     alternations: Vec<AlternationNode>,
+}
+
+impl AlternationsNode {
+    fn get(&self, mut index: NodeIndex) -> Node {
+        if !index.is_empty() {
+            let id = index.remove(0);
+            self.alternations[id].get(index)
+        } else {
+            Node::Alternations(self, Vec::new())
+        }
+    }
 }
 
 impl Parse for AlternationsNode {
@@ -296,9 +431,20 @@ impl Parse for AlternationsNode {
 }
 
 #[derive(Debug)]
-struct AlternationNode {
+pub struct AlternationNode {
     /// split by ' '
     factors: Vec<FactorNode>,
+}
+
+impl AlternationNode {
+    fn get(&self, mut index: NodeIndex) -> Node {
+        if !index.is_empty() {
+            let id = index.remove(0);
+            self.factors[id].get(index)
+        } else {
+            Node::Alternation(self, Vec::new())
+        }
+    }
 }
 
 impl Parse for AlternationNode {
@@ -319,7 +465,7 @@ impl Parse for AlternationNode {
 }
 
 #[derive(Debug)]
-enum FactorNode {
+pub enum FactorNode {
     // '(' Alternations ')'
     Group(AlternationsNode),
     // '{' Alternations '}'
@@ -327,6 +473,22 @@ enum FactorNode {
     // '[' Alternations ']'
     Optional(AlternationsNode),
     Symbol(Ident),
+}
+
+impl FactorNode {
+    fn get(&self, mut index: NodeIndex) -> Node {
+        if !index.is_empty() {
+            let id = index.remove(0);
+            match self {
+                Self::Group(alternations)
+                | Self::Optional(alternations)
+                | Self::Repeat(alternations) => alternations.get(index),
+                Self::Symbol(ident) => Node::Factor(self, Vec::new()),
+            }
+        } else {
+            Node::Factor(self, Vec::new())
+        }
+    }
 }
 
 impl Parse for FactorNode {
