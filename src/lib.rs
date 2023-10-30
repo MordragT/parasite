@@ -29,6 +29,7 @@ pub fn grammar(input: TokenStream) -> TokenStream {
     assert!(!grammar.contains_left_recursion());
 
     let interface = grammar.interface();
+    println!("{interface}");
 
     let first = grammar.first_sets();
     println!("{first}");

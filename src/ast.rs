@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use proc_macro2::TokenStream;
+use quote::quote;
 use syn::{
     braced, bracketed, parenthesized,
     parse::Parse,
@@ -7,7 +9,7 @@ use syn::{
     Ident, LitInt, Token,
 };
 
-use crate::grammar::{Grammar, Production, ProductionObject, Token};
+use crate::grammar::{Grammar, Production, ProductionKind, Token};
 
 // Structure to represent grammar rules
 #[derive(Debug)]
@@ -20,13 +22,17 @@ pub struct GrammarAst {
 }
 
 impl GrammarAst {
+    // TODO also expand user defined recursive productions
+    // Aim:
+    // No expanded productions that have recursive productions or empty alternations without being annotated as such by ProductionKind
     pub(crate) fn expand(self) -> Grammar {
         let mut productions = Vec::new();
         let mut table = HashMap::new();
 
         if let Node::Production(production, index) = self.start_production() {
+            let ident = production.lhs.clone();
             productions.push(Production::new(
-                ProductionObject::Single(production.lhs.clone()),
+                ProductionKind::Instance(ident.clone()),
                 Vec::new(),
                 index.clone(),
             ));
@@ -53,12 +59,9 @@ impl GrammarAst {
                             let mut index = index.clone();
                             index.push(i);
 
-                            let prod = Production::new(
-                                ProductionObject::Group(Vec::new()),
-                                vec![vec![]],
-                                index.clone(),
-                            );
                             let prod_id = productions.len();
+                            let prod =
+                                Production::new(ProductionKind::Group, vec![vec![]], index.clone());
 
                             table.insert(index, prod_id);
                             productions.push(prod);
@@ -83,11 +86,8 @@ impl GrammarAst {
                             let mut index = index.clone();
                             index.push(0);
                             let prod_id = productions.len();
-                            let prod = Production::new(
-                                ProductionObject::Group(Vec::new()),
-                                Vec::new(),
-                                index.clone(),
-                            );
+                            let prod =
+                                Production::new(ProductionKind::Group, Vec::new(), index.clone());
                             table.insert(index, prod_id);
                             productions.push(prod);
 
@@ -99,7 +99,7 @@ impl GrammarAst {
                             inner_idx.push(0);
                             let inner_id = productions.len();
                             let inner = Production::new(
-                                ProductionObject::Group(Vec::new()),
+                                ProductionKind::Group,
                                 Vec::new(),
                                 inner_idx.clone(),
                             );
@@ -108,7 +108,7 @@ impl GrammarAst {
 
                             let prod_id = productions.len();
                             let prod = Production::new(
-                                ProductionObject::Repeat(Vec::new()),
+                                ProductionKind::Repeat,
                                 vec![
                                     vec![Token::Derived(inner_id), Token::Derived(prod_id)],
                                     vec![],
@@ -125,7 +125,7 @@ impl GrammarAst {
                             inner_idx.push(0);
                             let inner_id = productions.len();
                             let inner = Production::new(
-                                ProductionObject::Optional(Vec::new()),
+                                ProductionKind::Group,
                                 Vec::new(),
                                 inner_idx.clone(),
                             );
@@ -134,7 +134,7 @@ impl GrammarAst {
 
                             let prod_id = productions.len();
                             let prod = Production::new(
-                                ProductionObject::Repeat(Vec::new()),
+                                ProductionKind::Optional,
                                 vec![vec![Token::Derived(inner_id)], vec![]],
                                 index.clone(),
                             );
@@ -148,16 +148,16 @@ impl GrammarAst {
                                 productions[id].alternations[0]
                                     .push(Token::Terminal(ident.clone()));
                             } else if let Some(prod_id) = productions.iter().position(|prod| {
-                                prod.lhs == ProductionObject::Single(ident.clone())
+                                prod.kind == ProductionKind::Instance(ident.clone())
                             }) {
                                 productions[id].alternations[0].push(Token::Derived(prod_id))
                             } else if let Some(production) = self.find_production(ident) {
+                                let prod_id = productions.len();
                                 let prod = Production::new(
-                                    ProductionObject::Single(ident.clone()),
+                                    ProductionKind::Instance(ident.clone()),
                                     Vec::new(),
                                     production.index().clone(),
                                 );
-                                let prod_id = productions.len();
                                 table.insert(production.index().clone(), prod_id);
                                 productions.push(prod);
 
@@ -165,9 +165,7 @@ impl GrammarAst {
                             } else {
                                 panic!("Identifier is no primitive terminal nor derivated: {ident}")
                             }
-                            productions[id]
-                                .lhs
-                                .push(ProductionObject::Single(ident.clone()));
+                            // productions[id].expr.push(IdExpr::Single(ident.clone()));
                         }
                     }
                 }

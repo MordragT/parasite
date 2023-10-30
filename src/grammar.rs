@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{collections::VecDeque, fmt};
 
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -24,7 +24,7 @@ impl fmt::Display for Grammar {
         write!(f, "===============\n")?;
 
         for (id, production) in self.productions.iter().enumerate() {
-            let mut output = format!("{}({:?})\t: ", id, production.lhs);
+            let mut output = format!("{}({})\t: ", id, production.kind);
             for tokens in &production.alternations {
                 for token in tokens {
                     match token {
@@ -34,7 +34,7 @@ impl fmt::Display for Grammar {
                             output.push('"');
                         }
                         Token::Derived(id) => {
-                            if let ProductionObject::Single(name) = &self.productions[*id].lhs {
+                            if let ProductionKind::Instance(name) = &self.productions[*id].kind {
                                 output.push_str(&name.to_string())
                             } else {
                                 output.push_str(&id.to_string())
@@ -88,8 +88,8 @@ impl Grammar {
     pub fn find_id(&self, ident: &Ident) -> Option<usize> {
         self.productions
             .iter()
-            .position(|production| match &production.lhs {
-                ProductionObject::Single(a) => a == ident,
+            .position(|production| match &production.kind {
+                ProductionKind::Instance(name) => name == ident,
                 _ => false,
             })
     }
@@ -128,21 +128,203 @@ impl Grammar {
     }
 
     pub fn interface(&self) -> TokenStream {
-        todo!()
+        let mut results = self
+            .productions
+            .iter()
+            .map(|production| {
+                if let ProductionKind::Instance(ident) = &production.kind {
+                    Some(quote!(#ident))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let mut queue = VecDeque::from_iter(0..results.len());
+
+        while let Some(id) = queue.pop_front() {
+            if results[id].is_none() {
+                let production = &self.productions[id];
+
+                if production
+                    .alternations
+                    .iter()
+                    .flatten()
+                    .all(|token| match token {
+                        Token::Derived(other_id) => results[*other_id].is_some() || id == *other_id,
+                        Token::Terminal(_) => true,
+                    })
+                {
+                    results[id] = Some(self.production_parameter(production, &results));
+                } else {
+                    queue.push_back(id);
+                }
+            }
+        }
+
+        let mut parameters = self
+            .productions
+            .iter()
+            .enumerate()
+            .map(|(id, production)| {
+                if !production.kind.is_instance() {
+                    Some(results[id].clone().unwrap())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let mut queue = VecDeque::from_iter(0..parameters.len());
+
+        while let Some(id) = queue.pop_front() {
+            if parameters[id].is_none() {
+                let production = &self.productions[id];
+
+                if production
+                    .alternations
+                    .iter()
+                    .flatten()
+                    .all(|token| match token {
+                        Token::Derived(other_id) => {
+                            parameters[*other_id].is_some() || id == *other_id
+                        }
+                        Token::Terminal(_) => true,
+                    })
+                {
+                    parameters[id] = Some(self.production_parameter(production, &results));
+                } else {
+                    queue.push_back(id);
+                }
+            }
+        }
+
+        let functions = self
+            .productions
+            .iter()
+            .enumerate()
+            .zip(parameters.into_iter().zip(results))
+            .map(|((id, production), (param, ret))| {
+                let param = param.unwrap();
+                let ret = ret.unwrap();
+                let name = if let ProductionKind::Instance(ident) = &production.kind {
+                    ident.to_string().to_lowercase()
+                } else {
+                    format!("production{id}")
+                };
+                let name = Ident::new(&name, Span::call_site());
+
+                if production.kind.is_instance() {
+                    quote! { fn #name(&self, input: #param) -> Result<#ret, Self::Error>; }
+                } else {
+                    quote! { fn #name(&self, input: #param) -> Result<#ret, Self::Error> {
+                        Ok(input)
+                    } }
+                }
+            });
+
+        quote! {
+            trait Grammar {
+                type Error;
+
+                #( #functions )*
+            }
+        }
+    }
+
+    fn production_parameter(
+        &self,
+        production: &Production,
+        results: &Vec<Option<TokenStream>>,
+    ) -> TokenStream {
+        match production.kind {
+            ProductionKind::Group | ProductionKind::Instance(_) => {
+                self.group_production_parameter(production, results)
+            }
+            ProductionKind::Optional => self.optional_production_parameter(production, results),
+            ProductionKind::Repeat => self.repeat_production_parameter(production, results),
+        }
+    }
+
+    fn optional_production_parameter(
+        &self,
+        production: &Production,
+        results: &Vec<Option<TokenStream>>,
+    ) -> TokenStream {
+        let param = match production.alternations[0][0] {
+            Token::Derived(other_id) => results[other_id].clone().unwrap(),
+            Token::Terminal(_) => unreachable!(),
+        };
+
+        quote!(Option<#param>)
+    }
+
+    fn repeat_production_parameter(
+        &self,
+        production: &Production,
+        results: &Vec<Option<TokenStream>>,
+    ) -> TokenStream {
+        let param = match production.alternations[0][0] {
+            Token::Derived(other_id) => results[other_id].clone().unwrap(),
+            Token::Terminal(_) => unreachable!(),
+        };
+
+        quote!(Vec<#param>)
+    }
+
+    fn group_production_parameter(
+        &self,
+        production: &Production,
+        results: &Vec<Option<TokenStream>>,
+    ) -> TokenStream {
+        if let [alternation] = production.alternations.as_slice() {
+            self.group_alternation_parameter(alternation, &results)
+        } else {
+            let len = production.alternations.len();
+            let variant_name = Ident::new(&format!("Sum{len}"), Span::call_site());
+
+            let params = production
+                .alternations
+                .iter()
+                .map(|alternation| self.group_alternation_parameter(alternation, &results));
+
+            quote!(#variant_name<#(#params),*>)
+        }
+    }
+
+    fn group_alternation_parameter(
+        &self,
+        alternation: &Vec<Token>,
+        results: &Vec<Option<TokenStream>>,
+    ) -> TokenStream {
+        if let [token] = alternation.as_slice() {
+            match token {
+                Token::Terminal(ident) => quote!(#ident),
+                Token::Derived(other_id) => results[*other_id].as_ref().unwrap().clone(),
+            }
+        } else {
+            let params = alternation.iter().map(|token| match token {
+                Token::Terminal(ident) => quote!(#ident),
+                Token::Derived(other_id) => results[*other_id].as_ref().unwrap().clone(),
+            });
+            quote!(
+                (#(#params),*)
+            )
+        }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Production {
-    pub(crate) lhs: ProductionObject,
+    pub(crate) kind: ProductionKind,
     pub(crate) alternations: Vec<Vec<Token>>,
     pub(crate) index: NodeIndex,
 }
 
 impl Production {
-    pub fn new(lhs: ProductionObject, alternations: Vec<Vec<Token>>, index: NodeIndex) -> Self {
+    pub fn new(kind: ProductionKind, alternations: Vec<Vec<Token>>, index: NodeIndex) -> Self {
         Self {
-            lhs,
+            kind,
             alternations,
             index,
         }
@@ -169,18 +351,29 @@ impl Production {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum ProductionObject {
-    Repeat(Vec<ProductionObject>),
-    Group(Vec<ProductionObject>),
-    Optional(Vec<ProductionObject>),
-    Single(Ident),
+pub enum ProductionKind {
+    Repeat,
+    Optional,
+    Group,
+    Instance(Ident),
 }
 
-impl ProductionObject {
-    pub(crate) fn push(&mut self, object: ProductionObject) {
+impl ProductionKind {
+    pub fn is_instance(&self) -> bool {
         match self {
-            Self::Repeat(list) | Self::Group(list) | Self::Optional(list) => list.push(object),
-            _ => (),
+            Self::Instance(_) => true,
+            _ => false,
+        }
+    }
+}
+
+impl fmt::Display for ProductionKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Group => write!(f, "group"),
+            Self::Optional => write!(f, "optional"),
+            Self::Repeat => write!(f, "repeat"),
+            Self::Instance(ident) => write!(f, "{ident}"),
         }
     }
 }

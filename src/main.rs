@@ -82,7 +82,7 @@ pub struct Ast {
 impl Grammar for Ast {
     type Error = String;
 
-    fn start(&self, input: Expr) -> Result<Start, Self::Error> {
+    fn start(&self, input: (Expr, Vec<(Semicolon, Expr)>)) -> Result<Start, Self::Error> {
         todo!()
     }
 
