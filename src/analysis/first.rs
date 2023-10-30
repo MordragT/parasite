@@ -1,18 +1,34 @@
-use crate::expansion::{ExpandedGrammar, Token};
+use crate::grammar::{Grammar, Token};
 use proc_macro2::Ident;
 use std::{
     collections::{HashMap, VecDeque},
     fmt,
 };
 
-#[derive(Debug, Clone, PartialEq)]
-struct Item<'a> {
+type FirstItem<'a> = Vec<&'a Ident>;
+type FirstSet<'a> = Vec<FirstUnit<'a>>;
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct Derivation<'a> {
     tokens: VecDeque<&'a Token>,
     item: FirstItem<'a>,
+    alternation: usize,
 }
 
-type FirstItem<'a> = Vec<&'a Ident>;
-type FirstSet<'a> = Vec<FirstItem<'a>>;
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct FirstUnit<'a> {
+    pub(crate) item: FirstItem<'a>,
+    pub(crate) alternation: usize,
+}
+
+impl<'a> From<Derivation<'a>> for FirstUnit<'a> {
+    fn from(derivation: Derivation<'a>) -> Self {
+        Self {
+            item: derivation.item,
+            alternation: derivation.alternation,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct FirstSets<'a> {
@@ -26,13 +42,12 @@ impl<'a> fmt::Display for FirstSets<'a> {
 
         for (id, set) in &self.sets {
             let mut output = format!("{id}\t: ");
-            for item in set {
-                for ident in item {
+            for unit in set {
+                for ident in &unit.item {
                     output.push_str(&ident.to_string());
                     output.push(' ');
                 }
-                output.pop();
-                output.push_str("\n\t, ");
+                output.push_str(&format!("({})\n\t, ", unit.alternation));
             }
             output.pop();
             output.pop();
@@ -45,7 +60,11 @@ impl<'a> fmt::Display for FirstSets<'a> {
 // TODO rules can be dependent on each other.
 // Meaning that there needs to be some way to partially update one production and then check from another if the required k is already computed
 impl<'a> FirstSets<'a> {
-    pub fn build(grammar: &'a ExpandedGrammar) -> Self {
+    pub fn build(grammar: &'a Grammar) -> Self {
+        Self::new(grammar).analyze()
+    }
+
+    fn new(grammar: &'a Grammar) -> Self {
         // populate left terminals of productions
         let mut derivations = grammar
             .iter_productions()
@@ -53,7 +72,8 @@ impl<'a> FirstSets<'a> {
                 production
                     .alternations()
                     .iter()
-                    .map(|tokens| {
+                    .enumerate()
+                    .map(|(alternation, tokens)| {
                         let mut to_process = tokens.into_iter().take(grammar.k());
 
                         let mut terminals = Vec::new();
@@ -71,9 +91,10 @@ impl<'a> FirstSets<'a> {
 
                         tokens.extend(to_process);
 
-                        Item {
+                        Derivation {
                             tokens,
                             item: terminals,
+                            alternation,
                         }
                     })
                     .collect::<Vec<_>>()
@@ -95,7 +116,7 @@ impl<'a> FirstSets<'a> {
             for (item_id, token) in to_process.into_iter().enumerate() {
                 match token {
                     Some(Token::Terminal(terminal)) => derivations[id][item_id].item.push(terminal),
-                    Some(Token::Nonterminal(other_id)) => {
+                    Some(Token::Derived(other_id)) => {
                         let todo =
                             match grammar.k().checked_sub(derivations[id][item_id].item.len()) {
                                 Some(t) => t,
@@ -130,12 +151,48 @@ impl<'a> FirstSets<'a> {
             }
         }
 
+        // TODO remove unnecessary first set items by checking what amount of k items is necessary to uphold:
+        // 1. every unit of the same alternation has minimal items while still including differing starting items for the parsing table
+        // 2. every unit of different alternations have enough items to differentiate their units
+
+        // for set in derivations {
+        //     let groups = set
+        //         .group_by(|a, b| a.alternation == b.alternation)
+        //         .collect::<Vec<_>>();
+
+        //     for l in 1..grammar.k() {
+        //         for a in &groups {
+        //             for b in &groups {
+        //                 if a != b {
+        //                     if a.iter()
+        //                         .map(|derivation| derivation.item.iter().take(l))
+        //                         .all(|item| {
+        //                             b.iter()
+        //                                 .map(|derivation| derivation.item.iter().take(l))
+        //                                 .all(|other| item != other)
+        //                         })
+        //                     {
+        //                         todo!()
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+
+        // Current approach is very complex and not very efficient maybe it it is acceptable to create more items than necessary for k > 1
+        // Only need to keep that in mind for parsing table creation and follow sets
+
         let sets = derivations
             .into_iter()
             .enumerate()
-            .map(|(id, set)| (id, set.into_iter().map(|item| item.item).collect()))
+            .map(|(id, set)| (id, set.into_iter().map(Derivation::into).collect()))
             .collect();
 
         Self { sets }
+    }
+
+    fn analyze(mut self) -> Self {
+        self
     }
 }

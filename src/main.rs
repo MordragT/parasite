@@ -36,6 +36,8 @@ struct LPar;
 
 struct RPar;
 
+struct Semicolon;
+
 enum Token {
     Number(Number),
     Add(Add),
@@ -51,9 +53,9 @@ enum Token {
 grammar! {
     type Terminals = Number | Add | Sub | Mul | Div | LPar | RPar;
     type Start = Start;
-    type K = 2;
+    type K = 1;
 
-    Start: Expr;
+    Start: Expr { Semicolon Expr };
     Expr: Term (Add | Sub) Term;
     Term: Atomic (Mul | Div) Atomic;
     Atomic: Number | LPar Expr RPar;

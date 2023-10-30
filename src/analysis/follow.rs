@@ -1,27 +1,42 @@
-use crate::expansion::{ExpandedGrammar, Token};
+use crate::grammar::{Grammar, Token};
 use proc_macro2::Ident;
 use std::{
-    borrow::Cow,
     collections::{HashMap, VecDeque},
     fmt,
 };
 
 use super::first::FirstSets;
 
-#[derive(Debug, Clone, PartialEq)]
-struct Item<'a> {
-    units: VecDeque<Unit<'a>>,
+type FollowItem<'a> = Vec<&'a Ident>;
+type FollowSet<'a> = Vec<FollowUnit<'a>>;
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct Derivation<'a> {
+    symbols: VecDeque<Symbol<'a>>,
     item: FollowItem<'a>,
+    alternation: usize,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-enum Unit<'a> {
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum Symbol<'a> {
     First(&'a Token),
     Follow(usize),
 }
 
-type FollowItem<'a> = Vec<&'a Ident>;
-type FollowSet<'a> = Vec<FollowItem<'a>>;
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct FollowUnit<'a> {
+    pub(crate) item: FollowItem<'a>,
+    pub(crate) alternation: usize,
+}
+
+impl<'a> From<Derivation<'a>> for FollowUnit<'a> {
+    fn from(derivation: Derivation<'a>) -> Self {
+        Self {
+            item: derivation.item,
+            alternation: derivation.alternation,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct FollowSets<'a> {
@@ -35,13 +50,12 @@ impl<'a> fmt::Display for FollowSets<'a> {
 
         for (id, set) in &self.sets {
             let mut output = format!("{id}\t: ");
-            for item in set {
-                for ident in item {
+            for unit in set {
+                for ident in &unit.item {
                     output.push_str(&ident.to_string());
                     output.push(' ');
                 }
-                output.pop();
-                output.push_str("\n\t, ");
+                output.push_str(&format!("({})\n\t, ", unit.alternation));
             }
             output.pop();
             output.pop();
@@ -52,32 +66,33 @@ impl<'a> fmt::Display for FollowSets<'a> {
 }
 
 impl<'a> FollowSets<'a> {
-    pub fn build(grammar: &'a ExpandedGrammar, first_sets: &FirstSets<'a>) -> Self {
+    pub fn build(grammar: &'a Grammar, first_sets: &FirstSets<'a>) -> Self {
         let mut derivations = vec![vec![]; first_sets.sets.len()];
 
         // TODO remove iter_productions in favor of simple productions getter
-        for production in grammar.iter_productions() {
-            for tokens in production.alternations().iter() {
+        for (id, production) in grammar.iter_productions().enumerate() {
+            for (alternation, tokens) in production.alternations().iter().enumerate() {
                 let mut to_process = tokens.into_iter();
 
                 while let Some(token) = to_process.next() {
-                    if let Token::Nonterminal(id) = token {
+                    if let Token::Derived(other_id) = token {
                         let units = if to_process.is_empty() {
                             let mut units = VecDeque::new();
-                            units.push_back(Unit::Follow(production.id));
+                            units.push_back(Symbol::Follow(id));
                             units
                         } else {
                             to_process
                                 .clone()
                                 .take(grammar.k())
-                                .map(Unit::First)
+                                .map(Symbol::First)
                                 .collect()
                         };
-                        let item = Item {
-                            units,
+                        let item = Derivation {
+                            symbols: units,
                             item: Vec::new(),
+                            alternation,
                         };
-                        derivations[*id].push(item);
+                        derivations[*other_id].push(item);
                     }
                 }
             }
@@ -88,7 +103,7 @@ impl<'a> FollowSets<'a> {
         while let Some(id) = queue.pop_front() {
             let to_process = derivations[id]
                 .iter_mut()
-                .map(|item| item.units.pop_front())
+                .map(|item| item.symbols.pop_front())
                 .collect::<Vec<_>>();
 
             if to_process.iter().all(|token| token.is_none()) {
@@ -102,17 +117,17 @@ impl<'a> FollowSets<'a> {
                 };
 
                 match unit {
-                    Some(Unit::First(Token::Terminal(terminal))) => {
+                    Some(Symbol::First(Token::Terminal(terminal))) => {
                         derivations[id][item_id].item.push(terminal)
                     }
-                    Some(Unit::First(Token::Nonterminal(other_id))) => {
+                    Some(Symbol::First(Token::Derived(other_id))) => {
                         let mut to_push = Vec::new();
                         for other_item in &first_sets.sets[other_id] {
                             let mut item = derivations[id][item_id].clone();
-                            item.item.extend(other_item.iter().take(todo));
+                            item.item.extend(other_item.item.iter().take(todo));
                             to_push.push(item);
                         }
-                        to_push.dedup_by(|a, b| a.eq(&b));
+                        // to_push.dedup_by(|a, b| a.eq(&b));
 
                         if let Some(item) = to_push.pop() {
                             derivations[id][item_id] = item;
@@ -122,21 +137,21 @@ impl<'a> FollowSets<'a> {
                             derivations[id].push(item);
                         }
                     }
-                    Some(Unit::Follow(other_id)) => {
+                    Some(Symbol::Follow(other_id)) => {
                         let mut to_push = Vec::new();
                         for other_item in &derivations[other_id] {
                             let mut item = derivations[id][item_id].clone();
                             item.item.extend(other_item.item.iter().take(todo));
 
                             if let Some(todo) = grammar.k().checked_sub(item.item.len()) {
-                                for unit in other_item.units.iter().take(todo).rev() {
-                                    item.units.push_front(unit.clone());
+                                for unit in other_item.symbols.iter().take(todo).rev() {
+                                    item.symbols.push_front(unit.clone());
                                 }
                                 queue.push_back(id);
                             }
                             to_push.push(item);
                         }
-                        to_push.dedup_by(|a, b| a.eq(&b));
+                        // to_push.dedup_by(|a, b| a.eq(&b));
 
                         if let Some(item) = to_push.pop() {
                             derivations[id][item_id] = item;
@@ -154,7 +169,7 @@ impl<'a> FollowSets<'a> {
         let sets = derivations
             .into_iter()
             .enumerate()
-            .map(|(id, set)| (id, set.into_iter().map(|item| item.item).collect()))
+            .map(|(id, set)| (id, set.into_iter().map(Derivation::into).collect()))
             .collect();
 
         Self { sets }
