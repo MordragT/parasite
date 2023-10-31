@@ -5,8 +5,9 @@ use quote::quote;
 use syn::{
     braced, bracketed, parenthesized,
     parse::Parse,
+    parse_macro_input,
     token::{Brace, Bracket, Paren},
-    Ident, LitInt, Token,
+    Data, DeriveInput, Ident, LitInt, Token, TypePath,
 };
 
 use crate::grammar::{Grammar, Production, ProductionKind, Token};
@@ -18,6 +19,7 @@ pub struct GrammarAst {
     terminals: Vec<Ident>,
     derived: Vec<Ident>,
     start: Ident,
+    token: DeriveInput,
     k: u16,
 }
 
@@ -177,6 +179,7 @@ impl GrammarAst {
             terminals,
             derived,
             start,
+            token,
             k,
         } = self;
 
@@ -186,6 +189,7 @@ impl GrammarAst {
             productions,
             terminals,
             derived,
+            token,
         }
     }
 
@@ -303,21 +307,23 @@ impl Parse for GrammarAst {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut start = None;
         let mut k = 3;
-        let mut terminals = Vec::new();
+
+        let token = input.parse::<DeriveInput>()?;
+        let terminals = match &token.data {
+            Data::Enum(data) => data
+                .variants
+                .iter()
+                .map(|variant| variant.ident.clone())
+                .collect(),
+            _ => return Err(syn::Error::new_spanned(token, "token must be an enum")),
+        };
 
         while input.peek(Token![type]) {
             input.parse::<Token![type]>()?;
             let ident = input.parse::<Ident>()?.to_string();
             input.parse::<Token![=]>()?;
 
-            if ident == "Terminals" {
-                terminals.push(input.parse()?);
-                while input.peek(Token!(|)) {
-                    input.parse::<Token!(|)>()?;
-                    let terminal = input.parse()?;
-                    terminals.push(terminal);
-                }
-            } else if ident == "Start" {
+            if ident == "Start" {
                 start = Some(input.parse()?);
             } else if ident == "K" {
                 let lit = input.parse::<LitInt>()?;
@@ -343,6 +349,7 @@ impl Parse for GrammarAst {
         Ok(Self {
             productions,
             start,
+            token,
             k,
             terminals,
             derived,

@@ -1,4 +1,5 @@
-use parasite::grammar;
+use logos::Logos;
+use parasite::*;
 use sum::*;
 
 struct Start {
@@ -22,36 +23,30 @@ enum Atomic {
     Expr(Box<Expr>),
 }
 
-struct Number(f32);
-
-struct Add;
-
-struct Sub;
-
-struct Mul;
-
-struct Div;
-
-struct LPar;
-
-struct RPar;
-
-struct Semicolon;
-
-enum Token {
-    Number(Number),
-    Add(Add),
-    Sub(Sub),
-    Mul(Mul),
-    Div(Div),
-    LPar(LPar),
-    RPar(RPar),
-}
-
 // uses type definitions for rules
 // generates Grammar trait
 grammar! {
-    type Terminals = Number | Add | Sub | Mul | Div | LPar | RPar | Semicolon;
+    #[derive(Logos, Debug)]
+    #[logos(skip r"[ \t\n\f]+")]
+    enum Token {
+        #[regex("[0-9]+", |lex| lex.slice().parse().ok())]
+        Number(u32),
+        #[token("+")]
+        Add,
+        #[token("-")]
+        Sub,
+        #[token("*")]
+        Mul,
+        #[token("/")]
+        Div,
+        #[token("(")]
+        LPar,
+        #[token(")")]
+        RPar,
+        #[token(";")]
+        Semicolon,
+    }
+        // type Token = Token;
     type Start = Start;
     type K = 1;
 
@@ -99,6 +94,12 @@ impl Grammar for Ast {
     }
 }
 
-fn main() {
-    println!("Hello, world!");
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let tokens = Token::lexer("1 + 10 * 8 / ( 4 - 5 )")
+        .collect::<Result<Vec<_>, ()>>()
+        .unwrap();
+
+    dbg!(tokens);
+
+    Ok(())
 }

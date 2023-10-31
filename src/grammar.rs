@@ -1,7 +1,11 @@
 use std::{collections::VecDeque, fmt};
 
 use proc_macro2::{Ident, Span, TokenStream};
-use quote::quote;
+use quote::{quote, ToTokens};
+use syn::{
+    token::{Brace, For, Impl, Struct},
+    Data, DeriveInput, Generics, Item, ItemImpl, ItemStruct, Path, Type, TypePath, Fields,
+};
 
 use crate::{
     analysis::{first::FirstSets, follow::FollowSets},
@@ -15,6 +19,7 @@ pub struct Grammar {
     pub(crate) productions: Vec<Production>,
     pub(crate) derived: Vec<Ident>,
     pub(crate) terminals: Vec<Ident>,
+    pub(crate) token: DeriveInput,
 }
 
 impl fmt::Display for Grammar {
@@ -127,7 +132,7 @@ impl Grammar {
         FollowSets::build(self, first_sets)
     }
 
-    pub fn interface(&self) -> TokenStream {
+    pub fn generate(&self) -> TokenStream {
         let mut results = self
             .productions
             .iter()
@@ -223,12 +228,75 @@ impl Grammar {
                 }
             });
 
+        let token = &self.token;
+
+        let variant_types = match token.data.clone() {
+            Data::Enum(data) => {
+                data.variants
+                    .into_iter()
+                    .fold(TokenStream::new(), |mut akku, variant| {
+                        let structure: Item = ItemStruct {
+                            attrs: Vec::new(),
+                            vis: syn::Visibility::Inherited,
+                            struct_token: Struct::default(),
+                            ident: variant.ident.clone(),
+                            generics: Generics::default(),
+                            fields: variant.fields.clone(),
+                            semi_token: None,
+                        }
+                        .into();
+                        
+                        let token_ident = token.ident.clone();
+                        let variant_ident = variant.ident;
+                        let variant_fields = match &variant.fields {
+                            Fields::Unnamed(fields) => {
+                                let fields = (0..fields.unnamed.len()).into_iter().map(|n| Ident::new(&format!("n{n}"), Span::call_site()));
+                                let elems = syn::parse_quote!(#(#fields),*);
+
+                                let tuple = syn::ExprTuple {
+                                    attrs: Vec::new(),
+                                    paren_token: syn::token::Paren::default(),
+                                    elems
+                                };
+                                tuple.to_token_stream()
+                            }
+                            _ => variant.fields.to_token_stream()
+                        };
+
+                        let arm: syn::Arm = syn::parse_quote!(
+                            #token_ident::#variant_ident #variant_fields => Ok(#variant_ident #variant_fields)
+                        );
+
+                        let try_from: ItemImpl = syn::parse_quote!(
+                            impl TryFrom<#token_ident> for #variant_ident {
+                                type Error = String;
+
+                                fn try_from(token: #token_ident) -> Result<#variant_ident, Self::Error> {
+                                    match token {
+                                        #arm,
+                                        _ => Err("Token not of variant kind".to_owned())
+                                    }
+                                }
+                            }
+                        );
+
+                        akku.extend_one(structure.to_token_stream());
+                        akku.extend_one(try_from.to_token_stream());
+                        akku
+                    })
+            }
+            _ => unreachable!(),
+        };
+
         quote! {
             trait Grammar {
                 type Error;
 
                 #( #functions )*
             }
+
+            #token
+            #variant_types
         }
     }
 
