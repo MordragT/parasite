@@ -1,16 +1,34 @@
-use std::collections::HashMap;
-
-use proc_macro2::TokenStream;
-use quote::quote;
-use syn::{
-    braced, bracketed, parenthesized,
-    parse::Parse,
-    parse_macro_input,
-    token::{Brace, Bracket, Paren},
-    Data, DeriveInput, Ident, LitInt, Token, TypePath,
-};
+pub mod alternation;
+pub mod factor;
+pub mod production;
 
 use crate::grammar::{Grammar, Production, ProductionKind, Token};
+use alternation::{AlternationNode, AlternationsNode};
+use factor::FactorNode;
+use production::ProductionNode;
+use std::collections::HashMap;
+use syn::{parse::Parse, Data, DeriveInput, Ident, LitInt, Token};
+
+pub type NodeIndex = Vec<usize>;
+
+#[derive(Debug)]
+pub enum Node<'a> {
+    Production(&'a ProductionNode, NodeIndex),
+    Alternations(&'a AlternationsNode, NodeIndex),
+    Alternation(&'a AlternationNode, NodeIndex),
+    Factor(&'a FactorNode, NodeIndex),
+}
+
+impl<'a> Node<'a> {
+    pub fn index(&self) -> &NodeIndex {
+        match self {
+            Self::Production(_, idx)
+            | Self::Alternation(_, idx)
+            | Self::Alternations(_, idx)
+            | Self::Factor(_, idx) => idx,
+        }
+    }
+}
 
 // Structure to represent grammar rules
 #[derive(Debug)]
@@ -27,7 +45,7 @@ impl GrammarAst {
     // TODO also expand user defined recursive productions
     // Aim:
     // No expanded productions that have recursive productions or empty alternations without being annotated as such by ProductionKind
-    pub(crate) fn expand(self) -> Grammar {
+    pub fn expand(self) -> Grammar {
         let mut productions = Vec::new();
         let mut table = HashMap::new();
 
@@ -49,15 +67,16 @@ impl GrammarAst {
                 Node::Alternations(alternations, ref index) => {
                     let id = table[index];
                     let alternations = alternations.alternations.as_slice();
+                    let len = alternations.len();
 
-                    if let [alternation] = alternations {
+                    if len == 1 {
                         let mut index = index.clone();
                         index.push(0);
 
                         table.insert(index, id);
                         productions[id].alternations.push(Vec::new());
                     } else {
-                        for (i, alternation) in alternations.iter().enumerate() {
+                        for i in 0..len {
                             let mut index = index.clone();
                             index.push(i);
 
@@ -73,7 +92,7 @@ impl GrammarAst {
                         }
                     }
                 }
-                Node::Alternation(alternation, ref index) => {
+                Node::Alternation(_, ref index) => {
                     // original production
                     assert!(table.contains_key(&index[0..index.len() - 1]));
                     // production from alternation
@@ -84,7 +103,7 @@ impl GrammarAst {
                     let id = table[&index[0..index.len() - 1]];
 
                     match factor {
-                        FactorNode::Group(alternations) => {
+                        FactorNode::Group(_) => {
                             let mut index = index.clone();
                             index.push(0);
                             let prod_id = productions.len();
@@ -96,7 +115,7 @@ impl GrammarAst {
                             // diverging alternations are only created in Node::Alternations and point directly to another production
                             productions[id].alternations[0].push(Token::Derived(prod_id));
                         }
-                        FactorNode::Repeat(alternations) => {
+                        FactorNode::Repeat(_) => {
                             let mut inner_idx = index.clone();
                             inner_idx.push(0);
                             let inner_id = productions.len();
@@ -122,7 +141,7 @@ impl GrammarAst {
 
                             productions[id].alternations[0].push(Token::Derived(prod_id));
                         }
-                        FactorNode::Optional(alternations) => {
+                        FactorNode::Optional(_) => {
                             let mut inner_idx = index.clone();
                             inner_idx.push(0);
                             let inner_id = productions.len();
@@ -193,36 +212,36 @@ impl GrammarAst {
         }
     }
 
-    fn iter(&self) -> impl Iterator<Item = Node> {
+    pub fn iter(&self) -> impl Iterator<Item = Node> {
         self.into_iter()
     }
 
-    fn iter_symbols(&self) -> impl Iterator<Item = (&Ident, NodeIndex)> {
+    pub fn iter_symbols(&self) -> impl Iterator<Item = (&Ident, NodeIndex)> {
         self.iter().filter_map(|node| match node {
             Node::Factor(FactorNode::Symbol(ident), idx) => Some((ident, idx)),
             _ => None,
         })
     }
 
-    fn get(&self, mut index: NodeIndex) -> Node {
+    pub fn get(&self, mut index: NodeIndex) -> Node {
         let id = index.remove(0);
 
         self.productions[id].get(index)
     }
 
-    fn is_terminal(&self, ident: &Ident) -> bool {
+    pub fn is_terminal(&self, ident: &Ident) -> bool {
         self.terminals.contains(ident)
     }
 
-    fn is_derived(&self, ident: &Ident) -> bool {
+    pub fn is_derived(&self, ident: &Ident) -> bool {
         self.derived.contains(ident)
     }
 
-    fn start_production(&self) -> Node {
+    pub fn start_production(&self) -> Node {
         self.find_production(&self.start).unwrap()
     }
 
-    fn find_production(&self, ident: &Ident) -> Option<Node> {
+    pub fn find_production(&self, ident: &Ident) -> Option<Node> {
         self.productions.iter().enumerate().find_map(|(id, prod)| {
             if &prod.lhs == ident {
                 Some(Node::Production(prod, vec![id]))
@@ -354,168 +373,5 @@ impl Parse for GrammarAst {
             terminals,
             derived,
         })
-    }
-}
-
-pub type NodeIndex = Vec<usize>;
-
-#[derive(Debug)]
-pub enum Node<'a> {
-    Production(&'a ProductionNode, NodeIndex),
-    Alternations(&'a AlternationsNode, NodeIndex),
-    Alternation(&'a AlternationNode, NodeIndex),
-    Factor(&'a FactorNode, NodeIndex),
-}
-
-impl<'a> Node<'a> {
-    pub fn index(&self) -> &NodeIndex {
-        match self {
-            Self::Production(_, idx)
-            | Self::Alternation(_, idx)
-            | Self::Alternations(_, idx)
-            | Self::Factor(_, idx) => idx,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct ProductionNode {
-    lhs: Ident,
-    /// split by |
-    alternations: AlternationsNode,
-}
-
-impl ProductionNode {
-    fn get(&self, index: NodeIndex) -> Node {
-        if !index.is_empty() {
-            self.alternations.get(index)
-        } else {
-            Node::Production(self, Vec::new())
-        }
-    }
-}
-
-impl Parse for ProductionNode {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let lhs = input.parse()?;
-        let _colon = input.parse::<Token![:]>()?;
-        let alternations = input.parse()?;
-        let _semi = input.parse::<Token![;]>()?;
-
-        Ok(Self { lhs, alternations })
-    }
-}
-
-#[derive(Debug)]
-pub struct AlternationsNode {
-    alternations: Vec<AlternationNode>,
-}
-
-impl AlternationsNode {
-    fn get(&self, mut index: NodeIndex) -> Node {
-        if !index.is_empty() {
-            let id = index.remove(0);
-            self.alternations[id].get(index)
-        } else {
-            Node::Alternations(self, Vec::new())
-        }
-    }
-}
-
-impl Parse for AlternationsNode {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let mut alternations = vec![input.parse()?];
-        while input.peek(Token!(|)) {
-            let _pipe = input.parse::<Token!(|)>()?;
-            let alternation = input.parse()?;
-            alternations.push(alternation);
-        }
-
-        Ok(Self { alternations })
-    }
-}
-
-#[derive(Debug)]
-pub struct AlternationNode {
-    /// split by ' '
-    factors: Vec<FactorNode>,
-}
-
-impl AlternationNode {
-    fn get(&self, mut index: NodeIndex) -> Node {
-        if !index.is_empty() {
-            let id = index.remove(0);
-            self.factors[id].get(index)
-        } else {
-            Node::Alternation(self, Vec::new())
-        }
-    }
-}
-
-impl Parse for AlternationNode {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let mut factors = vec![input.parse()?];
-        while !input.peek(Token![;])
-        // && !input.peek(Paren)
-        // && !input.peek(Brace)
-        // && !input.peek(Bracket)
-        && !input.peek(Token!(|))
-        && !input.is_empty()
-        {
-            let factor = input.parse()?;
-            factors.push(factor);
-        }
-        Ok(Self { factors })
-    }
-}
-
-#[derive(Debug)]
-pub enum FactorNode {
-    // '(' Alternations ')'
-    Group(AlternationsNode),
-    // '{' Alternations '}'
-    Repeat(AlternationsNode),
-    // '[' Alternations ']'
-    Optional(AlternationsNode),
-    Symbol(Ident),
-}
-
-impl FactorNode {
-    fn get(&self, mut index: NodeIndex) -> Node {
-        if !index.is_empty() {
-            let id = index.remove(0);
-            match self {
-                Self::Group(alternations)
-                | Self::Optional(alternations)
-                | Self::Repeat(alternations) => alternations.get(index),
-                Self::Symbol(ident) => Node::Factor(self, Vec::new()),
-            }
-        } else {
-            Node::Factor(self, Vec::new())
-        }
-    }
-}
-
-impl Parse for FactorNode {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let content;
-
-        let factor = if input.peek(Paren) {
-            parenthesized!(content in input);
-            let alternations = content.parse()?;
-            Self::Group(alternations)
-        } else if input.peek(Brace) {
-            braced!(content in input);
-            let alternations = content.parse()?;
-            Self::Repeat(alternations)
-        } else if input.peek(Bracket) {
-            bracketed!(content in input);
-            let alternations = content.parse()?;
-            Self::Optional(alternations)
-        } else {
-            Self::Symbol(input.parse()?)
-        };
-
-        Ok(factor)
     }
 }

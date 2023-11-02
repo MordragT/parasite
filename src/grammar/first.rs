@@ -61,13 +61,10 @@ impl<'a> fmt::Display for FirstSets<'a> {
 // Meaning that there needs to be some way to partially update one production and then check from another if the required k is already computed
 impl<'a> FirstSets<'a> {
     pub fn build(grammar: &'a Grammar) -> Self {
-        Self::new(grammar).analyze()
-    }
-
-    fn new(grammar: &'a Grammar) -> Self {
         // populate left terminals of productions
         let mut derivations = grammar
-            .iter_productions()
+            .productions
+            .iter()
             .map(|production| {
                 production
                     .alternations()
@@ -190,9 +187,5 @@ impl<'a> FirstSets<'a> {
             .collect();
 
         Self { sets }
-    }
-
-    fn analyze(mut self) -> Self {
-        self
     }
 }

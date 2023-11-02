@@ -3,23 +3,11 @@
 #![feature(slice_group_by)]
 #![feature(extend_one)]
 
-use std::{
-    cell::OnceCell,
-    sync::mpsc::{Receiver, SyncSender},
-};
-
+use crate::ast::GrammarAst;
 use proc_macro::TokenStream;
-use proc_macro2::Ident;
-use syn::{parse_macro_input, Data, DeriveInput};
+use syn::parse_macro_input;
 
-use crate::{
-    analysis::{first::FirstSets, follow::FollowSets},
-    ast::GrammarAst,
-};
-
-mod analysis;
 mod ast;
-mod generation;
 mod grammar;
 // mod parser;
 
@@ -65,7 +53,6 @@ pub fn grammar(input: TokenStream) -> TokenStream {
     assert!(!grammar.contains_left_recursion());
 
     let stream = grammar.generate();
-    println!("{stream}");
 
     let first = grammar.first_sets();
     println!("{first}");
