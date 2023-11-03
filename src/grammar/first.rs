@@ -12,20 +12,20 @@ type FirstSet<'a> = Vec<FirstUnit<'a>>;
 struct Derivation<'a> {
     tokens: VecDeque<&'a Token>,
     item: FirstItem<'a>,
-    alternation: usize,
+    aid: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FirstUnit<'a> {
     pub(crate) item: FirstItem<'a>,
-    pub(crate) alternation: usize,
+    pub(crate) aid: usize,
 }
 
 impl<'a> From<Derivation<'a>> for FirstUnit<'a> {
     fn from(derivation: Derivation<'a>) -> Self {
         Self {
             item: derivation.item,
-            alternation: derivation.alternation,
+            aid: derivation.aid,
         }
     }
 }
@@ -47,7 +47,7 @@ impl<'a> fmt::Display for FirstSets<'a> {
                     output.push_str(&ident.to_string());
                     output.push(' ');
                 }
-                output.push_str(&format!("({})\n\t, ", unit.alternation));
+                output.push_str(&format!("({})\n\t, ", unit.aid));
             }
             output.pop();
             output.pop();
@@ -70,7 +70,7 @@ impl<'a> FirstSets<'a> {
                     .alternations()
                     .iter()
                     .enumerate()
-                    .map(|(alternation, tokens)| {
+                    .map(|(aid, tokens)| {
                         let mut to_process = tokens.into_iter().take(grammar.k());
 
                         let mut terminals = Vec::new();
@@ -91,7 +91,7 @@ impl<'a> FirstSets<'a> {
                         Derivation {
                             tokens,
                             item: terminals,
-                            alternation,
+                            aid,
                         }
                     })
                     .collect::<Vec<_>>()

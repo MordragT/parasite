@@ -1,3 +1,5 @@
+#![feature(let_chains)]
+
 use logos::Logos;
 use parasite::*;
 use sum::*;
@@ -51,8 +53,8 @@ grammar! {
     type K = 1;
 
     Start: Expr { Semicolon Expr };
-    Expr: Term (Add | Sub) Term;
-    Term: Atomic (Mul | Div) Atomic;
+    Expr: Term [ (Add | Sub) Term ];
+    Term: Atomic [ (Mul | Div) Atomic ];
     Atomic: Number | LPar Expr RPar;
 }
 
@@ -81,25 +83,57 @@ impl Grammar for Ast {
         todo!()
     }
 
-    fn expr(&self, input: (Term, Sum2<Add, Sub>, Term)) -> Result<Expr, Self::Error> {
+    fn expr(&self, input: (Term, Option<(Sum2<Add, Sub>, Term)>)) -> Result<Expr, Self::Error> {
         todo!()
     }
 
-    fn term(&self, input: (Atomic, Sum2<Mul, Div>, Atomic)) -> Result<Term, Self::Error> {
+    fn term(&self, _: (Atomic, Option<(Sum2<Mul, Div>, Atomic)>)) -> Result<Term, Self::Error> {
         todo!()
     }
 
     fn atomic(&self, input: Sum2<Number, (LPar, Expr, RPar)>) -> Result<Atomic, Self::Error> {
         todo!()
     }
+
+    /*
+    fn parse_start(tokens: &mut Vec<Token>) -> Result<Start> {
+        match tokens.peek().kind {
+            first(Start) =>
+            first
+        }
+        let expr = Self::parse_expr(tokens)
+    }
+     */
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let tokens = Token::lexer("1 + 10 * 8 / ( 4 - 5 )")
+    let tokens = Token::lexer("(1 + (10 * (8 / ( 4 - 5 ))))")
         .collect::<Result<Vec<_>, ()>>()
         .unwrap();
 
-    dbg!(tokens);
+    let mut parser = Parser::new(tokens);
+    parser.parse();
 
     Ok(())
 }
+
+// Productions
+// ===============
+// 0(Start)	: Expr 13
+// 1(Expr)	: Term 9 Term
+// 2(Term)	: Atomic 6 Atomic
+// 3(Atomic)	: 4
+// 	| 5
+// 4(group)	: "Number"
+// 5(group)	: "LPar" Expr "RPar"
+// 6(group)	: 7
+// 	| 8
+// 7(group)	: "Mul"
+// 8(group)	: "Div"
+// 9(group)	: 10
+// 	| 11
+// 10(group)	: "Add"
+// 11(group)	: "Sub"
+// 12(group)	: "Semicolon" Expr
+// 13(repeat)	: 12 13
+// 	|

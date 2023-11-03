@@ -52,13 +52,20 @@ pub fn grammar(input: TokenStream) -> TokenStream {
     // TODO also detect indirect left recursion
     assert!(!grammar.contains_left_recursion());
 
-    let stream = grammar.generate();
-
     let first = grammar.first_sets();
     println!("{first}");
 
     let follow = grammar.follow_sets(&first);
     println!("{follow}");
+
+    let table = grammar.table(&first, &follow);
+    println!("{table}");
+
+    let interface = grammar.interface();
+    let token_variants = grammar.token_variants();
+
+    let stream = grammar.generate(&interface, &token_variants, &table);
+    println!("{stream}");
 
     stream.into()
 }

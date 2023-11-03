@@ -148,7 +148,7 @@ impl Grammar {
                 let result = result.unwrap();
 
                 Method {
-                    name: production.kind.ident().cloned(),
+                    name: production.kind.to_instance().cloned(),
                     param,
                     result,
                     is_instance: production.kind.is_instance(),

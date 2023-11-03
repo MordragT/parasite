@@ -1,7 +1,10 @@
-use self::{first::FirstSets, follow::FollowSets};
+use self::{
+    first::FirstSets, follow::FollowSets, interface::Interface, parser::Table,
+    token_variants::TokenVariants,
+};
 use crate::ast::NodeIndex;
 use proc_macro2::{Ident, TokenStream};
-use quote::quote;
+use quote::{quote, ToTokens};
 use std::fmt;
 use syn::DeriveInput;
 
@@ -67,6 +70,10 @@ impl Grammar {
         self.productions.len()
     }
 
+    pub fn terminals_count(&self) -> usize {
+        self.terminals.len()
+    }
+
     pub fn insert(&mut self, production: Production) -> usize {
         let id = self.productions.len();
 
@@ -85,13 +92,8 @@ impl Grammar {
         id
     }
 
-    pub fn find_id(&self, ident: &Ident) -> Option<usize> {
-        self.productions
-            .iter()
-            .position(|production| match &production.kind {
-                ProductionKind::Instance(name) => name == ident,
-                _ => false,
-            })
+    pub fn find_id(&self, needle: &Ident) -> Option<usize> {
+        self.derived.iter().position(|ident| ident == needle)
     }
 
     pub fn find_start(&self) -> (usize, &Production) {
@@ -105,6 +107,14 @@ impl Grammar {
 
     pub fn get_mut(&mut self, id: usize) -> &mut Production {
         &mut self.productions[id]
+    }
+
+    pub fn is_terminal(&self, ident: &Ident) -> bool {
+        self.terminals.contains(ident)
+    }
+
+    pub fn is_derived(&self, ident: &Ident) -> bool {
+        self.derived.contains(ident)
     }
 
     pub fn contains_left_recursion(&self) -> bool {
@@ -123,14 +133,23 @@ impl Grammar {
         FollowSets::build(self, first_sets)
     }
 
-    pub fn generate(&self) -> TokenStream {
-        let interface = self.interface();
+    pub fn generate(
+        &self,
+        interface: &Interface,
+        token_variants: &TokenVariants,
+        table: &Table,
+    ) -> TokenStream {
         let interface_decl = interface.declaration();
-
         let token_decl = &self.token;
-        let token_variants = self.token_variants();
+
         let token_variants_decl = token_variants.declarations();
         let token_variants_try_from_impls = token_variants.try_from_impls();
+
+        let token_kind = token_variants.kind_decl();
+        let into_token_kind = token_variants.into_kind_impl();
+
+        let parser_decl = self.parser_decl();
+        let parser_impl = self.parser_impl(table, token_variants);
 
         let stream = quote!(
             #interface_decl
@@ -138,6 +157,12 @@ impl Grammar {
             #token_decl
             #( #token_variants_decl )*
             #( #token_variants_try_from_impls )*
+
+            #token_kind
+            #into_token_kind
+
+            #parser_decl
+            #parser_impl
         );
 
         stream
@@ -196,7 +221,35 @@ impl ProductionKind {
         }
     }
 
-    pub fn ident(&self) -> Option<&Ident> {
+    pub fn is_repeat(&self) -> bool {
+        match self {
+            Self::Repeat => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_optional(&self) -> bool {
+        match self {
+            Self::Optional => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_group(&self) -> bool {
+        match self {
+            Self::Group => true,
+            _ => false,
+        }
+    }
+
+    pub fn to_instance(&self) -> Option<&Ident> {
+        match self {
+            Self::Instance(ident) => Some(ident),
+            _ => None,
+        }
+    }
+
+    pub fn into_instance(self) -> Option<Ident> {
         match self {
             Self::Instance(ident) => Some(ident),
             _ => None,

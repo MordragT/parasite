@@ -34,7 +34,7 @@ impl<'a> FollowSets<'a> {
         let mut chart = vec![vec![]; grammar.productions_count()];
 
         for (pid, production) in grammar.productions.iter().enumerate() {
-            for tokens in production.alternations().iter() {
+            for tokens in production.alternations() {
                 let mut current_item = Vec::new();
                 let mut current: Option<usize> = None;
 
