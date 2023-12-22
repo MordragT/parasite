@@ -17,11 +17,11 @@ mod token_variants;
 #[derive(Debug, Clone)]
 pub struct Grammar {
     pub(crate) start: Ident,
+    pub(crate) token: DeriveInput,
     pub(crate) k: usize,
     pub(crate) productions: Vec<Production>,
     pub(crate) derived: Vec<Ident>,
     pub(crate) terminals: Vec<Ident>,
-    pub(crate) token: DeriveInput,
 }
 
 impl fmt::Display for Grammar {

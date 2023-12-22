@@ -50,13 +50,7 @@ impl AlternationNode {
 impl Parse for AlternationNode {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut factors = vec![input.parse()?];
-        while !input.peek(Token![;])
-        // && !input.peek(Paren)
-        // && !input.peek(Brace)
-        // && !input.peek(Bracket)
-        && !input.peek(Token!(|))
-        && !input.is_empty()
-        {
+        while !input.peek(Token![;]) && !input.peek(Token!(|)) && !input.is_empty() {
             let factor = input.parse()?;
             factors.push(factor);
         }

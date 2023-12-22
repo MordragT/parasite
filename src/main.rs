@@ -4,8 +4,32 @@ use logos::Logos;
 use parasite::*;
 use sum::*;
 
+fn productions<Root: Node>() {
+    let mut productions = vec![];
+
+
+
+    if Root::Production::is_leaf() {
+        std::any::type_name::<Root::Production>();
+    }
+}
+
+
 struct Start {
     expr: Expr,
+}
+// is derived
+impl Node for Start {
+    type Child: impl Node = Expr;
+
+    fn populate(productions: &mut Vec<&' static str>) {
+        std::any::type_name::<Root::Production>();
+
+    }
+
+    fn id_path(&mut Vec<>) {
+
+    }
 }
 
 struct Expr {
@@ -14,10 +38,18 @@ struct Expr {
     right: Term,
 }
 
+impl Node for Expr {
+    type Production: impl Node = (Term, Sum2<Add, Sub>, Term);
+}
+
 struct Term {
     left: Atomic,
     op: Token,
     right: Atomic,
+}
+
+impl Node for Term {
+    type Production: impl Node = (Atomic, Sum2<Mul, Div>, Atomic);
 }
 
 enum Atomic {
@@ -25,9 +57,62 @@ enum Atomic {
     Expr(Box<Expr>),
 }
 
+impl Node for Atomic {
+    type Production: impl Node = Sum2<Number, Box<Expr>>;
+}
+
+impl Node for Number {
+    fn is_leaf() -> bool {
+        true
+    }
+}
+
+impl Node for () {
+    fn is_leaf() -> bool {
+        true
+    }
+}
+
+
 // uses type definitions for rules
 // generates Grammar trait
+// grammar! {
+//     %start = Start;
+//     %lookahead = 1;
+
+//     #[derive(Logos, Debug)]
+//     #[logos(skip r"[ \t\n\f]+")]
+//     Token ::=
+//         #[regex("[0-9]+", |lex| lex.slice().parse().ok())]
+//         Number(u32) |
+//         #[token("+")]
+//         Add |
+//         #[token("-")]
+//         Sub |
+//         #[token("*")]
+//         Mul |
+//         #[token("/")]
+//         Div |
+//         #[token("(")]
+//         LPar |
+//         #[token(")")]
+//         RPar |
+//         #[token(";")]
+//         Semicolon;
+    
+
+//     Start ::= Expr { Semicolon Expr };
+//     Expr ::= Term [ (Add | Sub) Term ];
+//     Term ::= Atomic [ (Mul | Div) Atomic ];
+//     Atomic ::= Number | LPar Expr RPar;
+// }
+
+
 grammar! {
+    type Token = Token;
+    type Start = Start;
+    type K = 1;
+
     #[derive(Logos, Debug)]
     #[logos(skip r"[ \t\n\f]+")]
     enum Token {
@@ -48,15 +133,79 @@ grammar! {
         #[token(";")]
         Semicolon,
     }
-        // type Token = Token;
+
+    struct Start {
+        expr: Expr,
+        tail: Vec<(Semicolon, Expr)>
+    }
+
+    struct Expr {
+        term: Term
+        tail: Option<(Sum2<Add, Sub>, Term)>
+    }
+
+    struct Term {
+         atomic: Atomic,
+         tail: Option<(Sum2<Mul, Div>, Atomic)>,
+    }
+
+    enum Atomic {
+        Number(Number),
+        Tail {
+            lpar: LPar,
+            expr: Box<Expr>,
+            rpar: RPar
+        }
+    }
+}
+
+grammar! {
+    %start = Start
+    %lookahead = 1
+
+    type Token = Token;
     type Start = Start;
     type K = 1;
 
-    Start: Expr { Semicolon Expr };
-    Expr: Term [ (Add | Sub) Term ];
-    Term: Atomic [ (Mul | Div) Atomic ];
-    Atomic: Number | LPar Expr RPar;
+    #[derive(Logos, Debug)]
+    #[logos(skip r"[ \t\n\f]+")]
+    enum Token {
+        #[regex("[0-9]+", |lex| lex.slice().parse().ok())]
+        Number(u32),
+        #[token("+")]
+        Add,
+        #[token("-")]
+        Sub,
+        #[token("*")]
+        Mul,
+        #[token("/")]
+        Div,
+        #[token("(")]
+        LPar,
+        #[token(")")]
+        RPar,
+        #[token(";")]
+        Semicolon,
+    }
+
+    Start ::= expr: Expr
+        , { semi: Semicolon, expr: Expr }
+        ;
+
+    Expr ::= term: Term
+        , [ ( add: Add | sub: Sub ), term: Term ]
+        ;
+
+    Term ::= atomic: Atomic
+         ,  [ ( mul: Mul | div: Div ), atomic: Atomic ]
+         ;
+
+    Atomic ::= number: Number
+        | (lpar: Lpar, expr: Expr, rpar: Rpar)
+        ;
 }
+
+
 
 /// Generated Grammar trait
 // /// shown here but typed out but would be generated
@@ -70,6 +219,9 @@ grammar! {
 //     fn term(atomic: Atomic, either: Either<Mul, Div>, atomic0: Atomic) -> Result<Term, Self::Error>;
 //     fn atomic(either: Either<Number, (LPar, Expr, RPar)>) -> Result<Atomic, Self::Error>;
 // }
+
+// trait Factor
+// impl Factor for Vec, Option, Box, Tuple, Array
 
 pub struct Ast {
     start: Start,
