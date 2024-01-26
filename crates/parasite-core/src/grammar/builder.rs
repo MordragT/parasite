@@ -1,12 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, LinkedList, VecDeque};
 
-use super::{table::Table, Grammar, Rule, Symbol, TypeName};
+use super::{table::Table, Grammar, Id, Rule, Symbol, TypeName};
 
 pub trait SyntaxAnalyzer {
     type Ast: Syntactical;
 
     fn build(look_ahead: usize) -> Table {
-        let mut grammar = Grammar::new();
+        let mut grammar = Grammar::new(TypeName::of::<Self::Ast>());
 
         Self::Ast::generate(&mut grammar);
 
@@ -26,8 +26,8 @@ impl<T: Syntactical + 'static> Syntactical for Option<T> {
 
         if !grammar.contains(&key) {
             let mut rule = Rule::new();
-            rule.insert(vec![T::generate(grammar)]);
-            rule.insert(vec![Symbol::epsilon()]);
+            rule.insert(Id(0), vec![T::generate(grammar)]);
+            rule.insert(Id(1), vec![Symbol::Epsilon]);
 
             grammar.insert(key, rule);
         }
@@ -42,7 +42,7 @@ impl<T: Syntactical + 'static, const N: usize> Syntactical for [T; N] {
         if !grammar.contains(&key) {
             let child = T::generate(grammar);
             let mut rule = Rule::new();
-            rule.insert(vec![child; N]);
+            rule.insert(Id(0), vec![child; N]);
             grammar.insert(key, rule);
         }
 
@@ -57,8 +57,8 @@ impl<T: Syntactical + 'static> Syntactical for Vec<T> {
 
         if !grammar.contains(&key) {
             let mut rule = Rule::new();
-            rule.insert(vec![T::generate(grammar), symbol]);
-            rule.insert(vec![Symbol::epsilon()]);
+            rule.insert(Id(0), vec![T::generate(grammar), symbol]);
+            rule.insert(Id(1), vec![Symbol::Epsilon]);
 
             grammar.insert(key, rule);
         }
@@ -74,8 +74,8 @@ impl<T: Syntactical + 'static> Syntactical for VecDeque<T> {
 
         if !grammar.contains(&key) {
             let mut rule = Rule::new();
-            rule.insert(vec![T::generate(grammar), symbol]);
-            rule.insert(vec![Symbol::epsilon()]);
+            rule.insert(Id(0), vec![T::generate(grammar), symbol]);
+            rule.insert(Id(1), vec![Symbol::Epsilon]);
 
             grammar.insert(key, rule);
         }
@@ -91,8 +91,8 @@ impl<T: Syntactical + 'static> Syntactical for LinkedList<T> {
 
         if !grammar.contains(&key) {
             let mut rule = Rule::new();
-            rule.insert(vec![T::generate(grammar), symbol]);
-            rule.insert(vec![Symbol::epsilon()]);
+            rule.insert(Id(0), vec![T::generate(grammar), symbol]);
+            rule.insert(Id(1), vec![Symbol::Epsilon]);
 
             grammar.insert(key, rule);
         }
@@ -108,8 +108,8 @@ impl<T: Syntactical + 'static> Syntactical for HashSet<T> {
 
         if !grammar.contains(&key) {
             let mut rule = Rule::new();
-            rule.insert(vec![T::generate(grammar), symbol]);
-            rule.insert(vec![Symbol::epsilon()]);
+            rule.insert(Id(0), vec![T::generate(grammar), symbol]);
+            rule.insert(Id(1), vec![Symbol::Epsilon]);
 
             grammar.insert(key, rule);
         }
@@ -125,8 +125,8 @@ impl<T: Syntactical + 'static> Syntactical for BTreeSet<T> {
 
         if !grammar.contains(&key) {
             let mut rule = Rule::new();
-            rule.insert(vec![T::generate(grammar), symbol]);
-            rule.insert(vec![Symbol::epsilon()]);
+            rule.insert(Id(0), vec![T::generate(grammar), symbol]);
+            rule.insert(Id(1), vec![Symbol::Epsilon]);
 
             grammar.insert(key, rule);
         }
@@ -142,8 +142,11 @@ impl<K: Syntactical + 'static, V: Syntactical + 'static> Syntactical for HashMap
 
         if !grammar.contains(&key) {
             let mut rule = Rule::new();
-            rule.insert(vec![K::generate(grammar), V::generate(grammar), symbol]);
-            rule.insert(vec![Symbol::epsilon()]);
+            rule.insert(
+                Id(0),
+                vec![K::generate(grammar), V::generate(grammar), symbol],
+            );
+            rule.insert(Id(1), vec![Symbol::Epsilon]);
 
             grammar.insert(key, rule);
         }
@@ -159,8 +162,11 @@ impl<K: Syntactical + 'static, V: Syntactical + 'static> Syntactical for BTreeMa
 
         if !grammar.contains(&key) {
             let mut rule = Rule::new();
-            rule.insert(vec![K::generate(grammar), V::generate(grammar), symbol]);
-            rule.insert(vec![Symbol::epsilon()]);
+            rule.insert(
+                Id(0),
+                vec![K::generate(grammar), V::generate(grammar), symbol],
+            );
+            rule.insert(Id(1), vec![Symbol::Epsilon]);
 
             grammar.insert(key, rule);
         }
@@ -181,7 +187,7 @@ where
 
         if !grammar.contains(&key) {
             let mut rule = Rule::new();
-            rule.insert(vec![T::generate(grammar), U::generate(grammar)]);
+            rule.insert(Id(0), vec![T::generate(grammar), U::generate(grammar)]);
 
             grammar.insert(key, rule);
         }
@@ -201,11 +207,14 @@ where
 
         if !grammar.contains(&key) {
             let mut rule = Rule::new();
-            rule.insert(vec![
-                T::generate(grammar),
-                U::generate(grammar),
-                V::generate(grammar),
-            ]);
+            rule.insert(
+                Id(0),
+                vec![
+                    T::generate(grammar),
+                    U::generate(grammar),
+                    V::generate(grammar),
+                ],
+            );
 
             grammar.insert(key, rule);
         }
@@ -226,12 +235,15 @@ where
 
         if !grammar.contains(&key) {
             let mut rule = Rule::new();
-            rule.insert(vec![
-                T::generate(grammar),
-                U::generate(grammar),
-                V::generate(grammar),
-                W::generate(grammar),
-            ]);
+            rule.insert(
+                Id(0),
+                vec![
+                    T::generate(grammar),
+                    U::generate(grammar),
+                    V::generate(grammar),
+                    W::generate(grammar),
+                ],
+            );
 
             grammar.insert(key, rule);
         }

@@ -1,148 +1,202 @@
-use super::{Grammar, Symbol, Terminal, TypeName};
-use std::{
-    collections::{HashMap, VecDeque},
-    num::NonZeroUsize,
-    ops::IndexMut,
-};
+use super::{Grammar, Id, Symbol, Terminals, TypeName};
+use std::collections::{HashMap, HashSet, VecDeque};
+
+pub type FirstTable = HashMap<TypeName, FirstSets>;
+pub type FirstSets = HashMap<Id, FirstSet>;
+pub type FirstSet = HashSet<Terminals>;
+
+type FirstItem = (Id, (Terminals, VecDeque<Symbol>));
 
 impl Grammar {
-    pub fn first_sets(&self, look_ahead: usize) -> FirstSets {
-        let mut sets = FirstSets::new();
-
-        for (key, rule) in &self.productions {
-            let mut set = FirstSet::new();
-
-            let mut alternations = rule
-                .iter()
-                .enumerate()
-                .map(|(index, symbols)| {
-                    let to_process = symbols.iter().take(look_ahead).cloned().collect::<Vec<_>>();
-                    (index, to_process)
-                })
-                .collect::<Vec<_>>();
-
-            alternations.dedup_by(|a, b| a.1.eq(&b.1));
-
-            for (index, symbols) in alternations {
-                let mut symbols = symbols.into_iter();
-
-                let mut terminals = Vec::new();
-                let mut pending = VecDeque::new();
-
-                while let Some(symbol) = symbols.next() {
-                    match symbol {
-                        Symbol::Terminal(terminal) => terminals.push(terminal),
-                        Symbol::Nonterminal(_) => {
-                            pending.push_back(symbol);
-                            break;
-                        }
-                    }
-                }
-                pending.extend(symbols);
-                set.push(FirstItem {
-                    index,
-                    terminals,
-                    pending,
-                });
-            }
-
-            sets.insert(*key, set);
+    fn first_k_of(
+        &self,
+        k: usize,
+        of: TypeName,
+        queue: &mut VecDeque<TypeName>,
+        cache: &mut HashMap<TypeName, Vec<FirstItem>>,
+    ) {
+        if cache[&of]
+            .iter()
+            .all(|(_, (terminals, symbols))| terminals.len() >= k || symbols.is_empty())
+        {
+            return;
         }
 
-        let mut queue = VecDeque::from_iter(self.keys());
+        let mut items = Vec::new();
 
-        while let Some(key) = queue.pop_front() {
-            let next_symbols = sets[&key]
-                .iter_mut()
-                .enumerate()
-                .map(|(pos, item)| {
-                    let symbol = item.pending.pop_front();
-                    (pos, symbol)
-                })
-                .collect::<Vec<_>>();
-
-            if next_symbols.iter().all(|(_, sym)| sym.is_none()) {
-                continue;
-            }
-
-            for (pos, symbol) in next_symbols {
+        for (id, (mut terminals, mut symbols)) in cache[&of].clone() {
+            while let Some(symbol) = symbols.pop_front() {
                 match symbol {
-                    Some(Symbol::Terminal(terminal)) => sets[&key][pos].terminals.push(terminal),
-                    Some(Symbol::Nonterminal(nonterminal)) => {
-                        let item = &sets[&key][pos];
-
-                        let pending_count = match look_ahead
-                            .checked_sub(item.count())
-                            .and_then(NonZeroUsize::new)
-                        {
-                            Some(count) => count.get(),
-                            None => continue,
-                        };
+                    Symbol::Epsilon => (),
+                    Symbol::Terminal(terminal) => terminals.push(terminal),
+                    Symbol::Nonterminal(nonterminal) => {
+                        let key = nonterminal.0;
 
                         let mut to_push = Vec::new();
+                        for (_, (terms, syms)) in &cache[&key] {
+                            let mut terminals = terminals.clone();
+                            terminals.extend(terms);
 
-                        for other_item in &sets[&nonterminal.0] {
-                            let mut item = item.clone();
-                            item.terminals
-                                .extend(other_item.terminals.iter().take(pending_count));
+                            let mut symbols = symbols.clone();
+                            symbols.extend(syms);
 
-                            if let Some(still_pending) = look_ahead
-                                .checked_sub(item.count())
-                                .and_then(NonZeroUsize::new)
-                            {
-                                for symbol in other_item.pending.iter().take(still_pending.get()) {
-                                    item.pending.push_back(*symbol);
-                                }
-                                queue.push_back(key);
-                            }
-                            to_push.push(item);
+                            to_push.push((id, (terminals, symbols)));
                         }
-                        to_push.dedup();
-
-                        if let Some(item) = to_push.pop() {
-                            sets[&key][pos] = item;
+                        if let Some((_, (terms, syms))) = to_push.pop() {
+                            terminals = terms;
+                            symbols = syms;
                         }
 
                         for item in to_push {
-                            sets[&key].push(item);
+                            items.push(item);
                         }
+
+                        queue.push_back(of);
+                        break;
                     }
-                    None => continue,
                 }
+
+                if terminals.len() == k {
+                    break;
+                }
+            }
+            items.push((id, (terminals, symbols)));
+        }
+
+        cache.insert(of, items);
+    }
+
+    pub fn first_k(&self, k: usize) -> FirstTable {
+        let mut queue = VecDeque::new();
+        let mut cache = HashMap::new();
+        let mut table = FirstTable::new();
+
+        for (key, rule) in &self.productions {
+            let mut sets = FirstSets::new();
+            let mut items = Vec::new();
+
+            for (id, symbols) in rule {
+                sets.insert(*id, FirstSet::new());
+                items.push((*id, (Vec::new(), VecDeque::from_iter(symbols.clone()))));
+            }
+
+            table.insert(*key, sets);
+            cache.insert(*key, items);
+            queue.push_back(*key);
+        }
+
+        while let Some(of) = queue.pop_front() {
+            self.first_k_of(k, of, &mut queue, &mut cache);
+        }
+
+        for (key, items) in cache {
+            for (id, (terminals, _)) in items {
+                table[&key][&id].insert(terminals);
             }
         }
 
-        sets
+        table
     }
 }
 
-pub type FirstSets = HashMap<TypeName, FirstSet>;
+#[cfg(test)]
+mod test {
 
-impl IndexMut<&TypeName> for FirstSets {
-    fn index_mut(&mut self, index: &TypeName) -> &mut Self::Output {
-        self.get_mut(&index).unwrap()
-    }
-}
+    use crate::grammar::{builder::Syntactical, Grammar, Id, Rule, Symbol, Terminal, TypeName};
 
-pub type FirstSet = Vec<FirstItem>;
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct FirstItem {
-    pub(crate) index: usize,
-    pub(crate) terminals: Vec<Terminal>,
-    pending: VecDeque<Symbol>,
-}
-
-impl FirstItem {
-    pub fn count(&self) -> usize {
-        self.terminals.len()
+    enum A {
+        Recurse((u8, Box<Self>)),
+        End,
     }
 
-    pub fn is_epsilon(&self) -> bool {
-        if let [terminal] = self.terminals.as_slice() {
-            terminal.is_epsilon()
-        } else {
-            false
+    impl Syntactical for A {
+        fn generate(grammar: &mut crate::grammar::Grammar) -> crate::grammar::Symbol {
+            let key = TypeName::of::<Self>();
+            let symbol = Symbol::nonterminal(key);
+
+            if !grammar.contains(&key) {
+                let mut rule = Rule::new();
+                rule.insert(Id(0), vec![u8::generate(grammar), symbol]);
+                rule.insert(Id(1), vec![Symbol::terminal(TypeName("End"))]);
+
+                grammar.insert(key, rule);
+            }
+
+            symbol
         }
+    }
+
+    #[test]
+    fn first_1_of_a() {
+        let mut grammar = Grammar::new(TypeName::of::<A>());
+
+        A::generate(&mut grammar);
+
+        let first_table = grammar.first_k(1);
+        let first_sets = &first_table[&TypeName::of::<A>()];
+
+        let recurse = &first_sets[&Id(0)];
+        assert_eq!(recurse.len(), 1);
+        assert!(recurse.contains(&vec![Terminal::from(TypeName::of::<u8>())]));
+
+        let end = &first_sets[&Id(1)];
+        assert_eq!(end.len(), 1);
+        assert!(end.contains(&vec![Terminal::from(TypeName("End"))]));
+    }
+
+    #[test]
+    fn first_2_of_a() {
+        let mut grammar = Grammar::new(TypeName::of::<A>());
+
+        A::generate(&mut grammar);
+
+        let first_table = grammar.first_k(2);
+        let first_sets = &first_table[&TypeName::of::<A>()];
+
+        let recurse = &first_sets[&Id(0)];
+        assert_eq!(recurse.len(), 2);
+        assert!(recurse.contains(&vec![
+            Terminal::from(TypeName::of::<u8>()),
+            Terminal::from(TypeName::of::<u8>()),
+        ]));
+        assert!(recurse.contains(&vec![
+            Terminal::from(TypeName::of::<u8>()),
+            Terminal::from(TypeName("End")),
+        ]));
+
+        let end = &first_sets[&Id(1)];
+        assert_eq!(end.len(), 1);
+        assert!(end.contains(&vec![Terminal::from(TypeName("End"))]));
+    }
+
+    #[test]
+    fn first_3_of_a() {
+        let mut grammar = Grammar::new(TypeName::of::<A>());
+
+        A::generate(&mut grammar);
+
+        let first_table = grammar.first_k(3);
+        let first_sets = &first_table[&TypeName::of::<A>()];
+
+        let recurse = &first_sets[&Id(0)];
+        assert_eq!(recurse.len(), 3);
+        assert!(recurse.contains(&vec![
+            Terminal::from(TypeName::of::<u8>()),
+            Terminal::from(TypeName::of::<u8>()),
+            Terminal::from(TypeName::of::<u8>()),
+        ]));
+        assert!(recurse.contains(&vec![
+            Terminal::from(TypeName::of::<u8>()),
+            Terminal::from(TypeName::of::<u8>()),
+            Terminal::from(TypeName("End")),
+        ]));
+        assert!(recurse.contains(&vec![
+            Terminal::from(TypeName::of::<u8>()),
+            Terminal::from(TypeName("End")),
+        ]));
+
+        let end = &first_sets[&Id(1)];
+        assert_eq!(end.len(), 1);
+        assert!(end.contains(&vec![Terminal::from(TypeName("End"))]));
     }
 }

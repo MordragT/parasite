@@ -4,8 +4,6 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use indexmap::IndexSet;
-
 pub mod builder;
 pub mod first;
 pub mod follow;
@@ -14,12 +12,14 @@ pub mod table;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Grammar {
     productions: HashMap<TypeName, Rule>,
+    start: TypeName,
 }
 
 impl Grammar {
-    pub fn new() -> Self {
+    pub fn new(start: TypeName) -> Self {
         Self {
             productions: HashMap::new(),
+            start,
         }
     }
 
@@ -72,12 +72,28 @@ impl IndexMut<&TypeName> for Grammar {
     }
 }
 
-pub type Rule = IndexSet<Vec<Symbol>>;
+impl<T> IndexMut<&TypeName> for HashMap<TypeName, T> {
+    fn index_mut(&mut self, index: &TypeName) -> &mut Self::Output {
+        self.get_mut(index).unwrap()
+    }
+}
+pub type Rule = HashMap<Id, Symbols>;
+
+impl<T> IndexMut<&Id> for HashMap<Id, T> {
+    fn index_mut(&mut self, index: &Id) -> &mut Self::Output {
+        self.get_mut(index).unwrap()
+    }
+}
+
+pub type Symbols = Vec<Symbol>;
+pub type Terminals = Vec<Terminal>;
+pub type Nonterminals = Vec<Nonterminal>;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Symbol {
     Nonterminal(Nonterminal),
     Terminal(Terminal),
+    Epsilon,
 }
 
 impl Symbol {
@@ -89,9 +105,9 @@ impl Symbol {
         Self::Terminal(key.into())
     }
 
-    pub fn epsilon() -> Self {
-        Self::Terminal(Terminal::epsilon())
-    }
+    // pub fn epsilon() -> Self {
+    //     Self::Terminal(Terminal::epsilon())
+    // }
 }
 
 impl From<Nonterminal> for Symbol {
@@ -116,31 +132,40 @@ impl From<TypeName> for Nonterminal {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Terminal(pub(crate) Option<TypeName>);
+pub struct Terminal(pub(crate) TypeName);
 
-impl Terminal {
-    fn epsilon() -> Self {
-        Self(None)
-    }
+// impl Terminal {
+//     fn epsilon() -> Self {
+//         Self(None)
+//     }
 
-    pub fn is_epsilon(&self) -> bool {
-        self.0.is_none()
-    }
-}
+//     pub fn is_epsilon(&self) -> bool {
+//         self.0.is_none()
+//     }
+// }
 
 impl From<TypeName> for Terminal {
     fn from(value: TypeName) -> Self {
-        Self(Some(value))
+        Self(value)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TypeName(&'static str);
+pub struct TypeName(pub(crate) &'static str);
 
 impl TypeName {
     pub fn of<T: ?Sized>() -> Self {
         let type_name = type_name::<T>();
 
         TypeName(type_name)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Id(pub(crate) usize);
+
+impl PartialEq<usize> for Id {
+    fn eq(&self, other: &usize) -> bool {
+        self.0.eq(other)
     }
 }
