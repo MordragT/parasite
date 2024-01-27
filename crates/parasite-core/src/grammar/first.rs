@@ -37,10 +37,10 @@ impl Grammar {
                             let mut terminals = terminals.clone();
                             terminals.extend(terms);
 
-                            let mut symbols = symbols.clone();
-                            symbols.extend(syms);
+                            let mut syms = syms.clone();
+                            syms.extend(&symbols);
 
-                            to_push.push((id, (terminals, symbols)));
+                            to_push.push((id, (terminals, syms)));
                         }
                         if let Some((_, (terms, syms))) = to_push.pop() {
                             terminals = terms;
@@ -56,7 +56,8 @@ impl Grammar {
                     }
                 }
 
-                if terminals.len() == k {
+                if terminals.len() >= k {
+                    terminals.truncate(k);
                     break;
                 }
             }
@@ -110,14 +111,16 @@ mod test {
     }
 
     impl Syntactical for A {
-        fn generate(grammar: &mut crate::grammar::Grammar) -> crate::grammar::Symbol {
+        fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
             let key = TypeName::of::<Self>();
             let symbol = Symbol::nonterminal(key);
 
-            if !grammar.contains(&key) {
+            if !Self::visited(grammar, stack) {
+                stack.push(key);
+
                 let mut rule = Rule::new();
-                rule.insert(Id(0), vec![u8::generate(grammar), symbol]);
-                rule.insert(Id(1), vec![Symbol::terminal(TypeName("End"))]);
+                rule.insert(Id(0), vec![u8::generate(grammar, stack), symbol]);
+                rule.insert(Id(1), vec![Symbol::Epsilon]);
 
                 grammar.insert(key, rule);
             }
@@ -127,10 +130,11 @@ mod test {
     }
 
     #[test]
-    fn first_1_of_a() {
+    fn first_1() {
         let mut grammar = Grammar::new(TypeName::of::<A>());
+        let mut stack = Vec::new();
 
-        A::generate(&mut grammar);
+        A::generate(&mut grammar, &mut stack);
 
         let first_table = grammar.first_k(1);
         let first_sets = &first_table[&TypeName::of::<A>()];
@@ -141,14 +145,15 @@ mod test {
 
         let end = &first_sets[&Id(1)];
         assert_eq!(end.len(), 1);
-        assert!(end.contains(&vec![Terminal::from(TypeName("End"))]));
+        assert!(end.contains(&Vec::new()));
     }
 
     #[test]
-    fn first_2_of_a() {
+    fn first_2() {
         let mut grammar = Grammar::new(TypeName::of::<A>());
+        let mut stack = Vec::new();
 
-        A::generate(&mut grammar);
+        A::generate(&mut grammar, &mut stack);
 
         let first_table = grammar.first_k(2);
         let first_sets = &first_table[&TypeName::of::<A>()];
@@ -159,21 +164,19 @@ mod test {
             Terminal::from(TypeName::of::<u8>()),
             Terminal::from(TypeName::of::<u8>()),
         ]));
-        assert!(recurse.contains(&vec![
-            Terminal::from(TypeName::of::<u8>()),
-            Terminal::from(TypeName("End")),
-        ]));
+        assert!(recurse.contains(&vec![Terminal::from(TypeName::of::<u8>()),]));
 
         let end = &first_sets[&Id(1)];
         assert_eq!(end.len(), 1);
-        assert!(end.contains(&vec![Terminal::from(TypeName("End"))]));
+        assert!(end.contains(&Vec::new()));
     }
 
     #[test]
-    fn first_3_of_a() {
+    fn first_3() {
         let mut grammar = Grammar::new(TypeName::of::<A>());
+        let mut stack = Vec::new();
 
-        A::generate(&mut grammar);
+        A::generate(&mut grammar, &mut stack);
 
         let first_table = grammar.first_k(3);
         let first_sets = &first_table[&TypeName::of::<A>()];
@@ -188,15 +191,11 @@ mod test {
         assert!(recurse.contains(&vec![
             Terminal::from(TypeName::of::<u8>()),
             Terminal::from(TypeName::of::<u8>()),
-            Terminal::from(TypeName("End")),
         ]));
-        assert!(recurse.contains(&vec![
-            Terminal::from(TypeName::of::<u8>()),
-            Terminal::from(TypeName("End")),
-        ]));
+        assert!(recurse.contains(&vec![Terminal::from(TypeName::of::<u8>())]));
 
         let end = &first_sets[&Id(1)];
         assert_eq!(end.len(), 1);
-        assert!(end.contains(&vec![Terminal::from(TypeName("End"))]));
+        assert!(end.contains(&Vec::new()));
     }
 }

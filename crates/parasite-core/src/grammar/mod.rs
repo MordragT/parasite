@@ -1,12 +1,14 @@
 use std::{
     any::type_name,
     collections::HashMap,
+    fmt,
     ops::{Index, IndexMut},
 };
 
 pub mod builder;
 pub mod first;
 pub mod follow;
+pub mod parser;
 pub mod table;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,6 +110,41 @@ impl Symbol {
     // pub fn epsilon() -> Self {
     //     Self::Terminal(Terminal::epsilon())
     // }
+
+    pub fn into_terminal(self) -> Option<Terminal> {
+        match self {
+            Self::Terminal(terminal) => Some(terminal),
+            _ => None,
+        }
+    }
+
+    pub fn into_nonterminal(self) -> Option<Nonterminal> {
+        match self {
+            Self::Nonterminal(nonterminal) => Some(nonterminal),
+            _ => None,
+        }
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        match self {
+            Self::Terminal(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_nonterminal(&self) -> bool {
+        match self {
+            Self::Nonterminal(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_epsilon(&self) -> bool {
+        match self {
+            Self::Epsilon => true,
+            _ => false,
+        }
+    }
 }
 
 impl From<Nonterminal> for Symbol {
@@ -147,6 +184,12 @@ pub struct Terminal(pub(crate) TypeName);
 impl From<TypeName> for Terminal {
     fn from(value: TypeName) -> Self {
         Self(value)
+    }
+}
+
+impl fmt::Display for Terminal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", &self.0 .0)
     }
 }
 
