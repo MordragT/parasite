@@ -5,16 +5,10 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-pub mod builder;
-pub mod first;
-pub mod follow;
-pub mod parser;
-pub mod table;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Grammar {
-    productions: HashMap<TypeName, Rule>,
-    start: TypeName,
+    pub productions: HashMap<TypeName, Rule>,
+    pub start: TypeName,
 }
 
 impl Grammar {
@@ -160,7 +154,7 @@ impl From<Terminal> for Symbol {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Nonterminal(pub(crate) TypeName);
+pub struct Nonterminal(pub TypeName);
 
 impl From<TypeName> for Nonterminal {
     fn from(value: TypeName) -> Self {
@@ -169,7 +163,7 @@ impl From<TypeName> for Nonterminal {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Terminal(pub(crate) TypeName);
+pub struct Terminal(pub TypeName);
 
 // impl Terminal {
 //     fn epsilon() -> Self {
@@ -202,10 +196,14 @@ impl TypeName {
 
         TypeName(type_name)
     }
+
+    pub fn as_str(&self) -> &'static str {
+        self.0
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Id(pub(crate) usize);
+pub struct Id(pub usize);
 
 impl PartialEq<usize> for Id {
     fn eq(&self, other: &usize) -> bool {

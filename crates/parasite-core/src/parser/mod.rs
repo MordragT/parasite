@@ -1,5 +1,11 @@
-use super::{Grammar, Id, Symbol, Terminal, TypeName};
+use crate::grammar::{Grammar, Id, Symbol, Terminal, TypeName};
 use thiserror::Error;
+
+#[cfg(feature = "combinator")]
+pub use self::chumsky::*;
+
+#[cfg(feature = "combinator")]
+mod chumsky;
 
 #[derive(Debug, Error)]
 pub enum ParseError {
@@ -23,15 +29,15 @@ impl Grammar {
         let mut stack = vec![Symbol::nonterminal(self.start)];
         let mut cursor = 0;
 
-        'outer: loop {
+        loop {
             let current = stack.pop().unwrap().into_nonterminal().unwrap().0;
             let look_ahead = &table[&current];
 
-            let (peek, &id) = (1..=k)
+            let &id = (1..=k)
                 .into_iter()
                 .find_map(|i| {
                     let peek = &terminals[cursor..(i + cursor)];
-                    look_ahead.get_key_value(peek)
+                    look_ahead.get(peek)
                 })
                 .ok_or(ParseError::Unexpected {
                     terminal: terminals[cursor],
@@ -72,7 +78,10 @@ impl Grammar {
 #[cfg(test)]
 mod test {
 
-    use crate::grammar::{builder::Syntactical, Grammar, Id, Rule, Symbol, Terminal, TypeName};
+    use crate::{
+        builder::Syntactical,
+        grammar::{Grammar, Id, Rule, Symbol, Terminal, TypeName},
+    };
 
     enum S {
         A((u8, A, u8)),

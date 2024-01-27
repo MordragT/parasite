@@ -1,4 +1,4 @@
-use super::{Grammar, Id, Symbol, Terminals, TypeName};
+use crate::grammar::{Grammar, Id, Symbol, Terminals, TypeName};
 use std::collections::{HashMap, HashSet, VecDeque};
 
 pub type FirstTable = HashMap<TypeName, FirstSets>;
@@ -103,7 +103,10 @@ impl Grammar {
 #[cfg(test)]
 mod test {
 
-    use crate::grammar::{builder::Syntactical, Grammar, Id, Rule, Symbol, Terminal, TypeName};
+    use crate::{
+        builder::Syntactical,
+        grammar::{Grammar, Id, Rule, Symbol, Terminal, TypeName},
+    };
 
     enum A {
         Recurse((u8, Box<Self>)),

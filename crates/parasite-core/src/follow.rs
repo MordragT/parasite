@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use super::{first::FirstTable, Grammar, Terminal, TypeName};
-use crate::grammar::Symbol;
+use super::first::FirstTable;
+use crate::grammar::{Grammar, Symbol, Terminal, TypeName};
 
 pub type FollowSets = HashMap<TypeName, FollowSet>;
 pub type FollowSet = HashSet<Vec<Terminal>>;
@@ -120,7 +120,10 @@ enum Reference {
 #[cfg(test)]
 mod test {
 
-    use crate::grammar::{builder::Syntactical, Grammar, Id, Rule, Symbol, Terminal, TypeName};
+    use crate::{
+        builder::Syntactical,
+        grammar::{Grammar, Id, Rule, Symbol, Terminal, TypeName},
+    };
 
     enum S {
         A((u8, A, u8)),

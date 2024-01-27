@@ -1,4 +1,4 @@
-use super::{Grammar, Id, Terminals, TypeName};
+use crate::grammar::{Grammar, Id, Terminals, TypeName};
 use std::collections::HashMap;
 
 impl Grammar {

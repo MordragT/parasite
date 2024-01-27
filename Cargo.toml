@@ -1,21 +1,13 @@
+[package]
+name = "parasite"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+parasite-core = { path = "crates/parasite-core", features = ["combinator"] }
+parasite-macros = { path = "crates/parasite-macros" }
+
 [workspace]
-members = ["crates/parasite-core"]
-resolver = "2"
-
-# [package]
-# name = "parasite"
-# version = "0.1.0"
-# edition = "2021"
-
-# # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-# [dependencies]
-# syn = { version = "2.0", features = ["full"] }
-# quote = "1.0"
-# proc-macro2 = "1.0"
-# sum = "0.1.7"
-# logos = "0.13.0"
-# kinded = "0.3.0"
-
-# [lib]
-# proc-macro = true
+members = ["crates/*"]

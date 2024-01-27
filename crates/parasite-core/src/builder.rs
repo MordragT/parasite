@@ -1,20 +1,5 @@
+use crate::grammar::{Grammar, Id, Rule, Symbol, TypeName};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, LinkedList, VecDeque};
-
-use super::{table::Table, Grammar, Id, Rule, Symbol, TypeName};
-
-pub trait SyntaxAnalyzer {
-    type Ast: Syntactical;
-
-    fn build(k: usize) -> Table {
-        let mut grammar = Grammar::new(TypeName::of::<Self::Ast>());
-        let mut stack = Vec::new();
-
-        Self::Ast::generate(&mut grammar, &mut stack);
-
-        grammar.table(k)
-    }
-}
-
 pub trait Syntactical {
     fn generate(_grammar: &mut Grammar, _stack: &mut Vec<TypeName>) -> Symbol {
         Symbol::terminal(TypeName::of::<Self>())
@@ -23,6 +8,50 @@ pub trait Syntactical {
     fn visited(grammar: &Grammar, stack: &Vec<TypeName>) -> bool {
         let key = TypeName::of::<Self>();
         grammar.contains(&key) || stack.contains(&key)
+    }
+}
+
+pub struct Rec<T>(pub Box<T>);
+
+impl<T: Syntactical + 'static> Syntactical for Rec<T> {
+    fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
+        let key = TypeName::of::<Self>();
+
+        if !Self::visited(grammar, stack) {
+            stack.push(key);
+
+            let mut rule = Rule::new();
+            rule.insert(Id(0), vec![T::generate(grammar, stack)]);
+
+            grammar.insert(key, rule);
+        }
+        Symbol::nonterminal(key)
+    }
+}
+
+pub struct NonEmptyVec<T>(pub Vec<T>);
+
+impl<T: Syntactical + 'static> Syntactical for NonEmptyVec<T> {
+    fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
+        let key = TypeName::of::<Self>();
+        let symbol = Symbol::nonterminal(key);
+
+        if !Self::visited(grammar, stack) {
+            stack.push(key);
+
+            let mut rule = Rule::new();
+            rule.insert(
+                Id(0),
+                vec![
+                    T::generate(grammar, stack),
+                    Vec::<T>::generate(grammar, stack),
+                ],
+            );
+
+            grammar.insert(key, rule);
+        }
+
+        symbol
     }
 }
 
