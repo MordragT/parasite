@@ -20,10 +20,11 @@ impl Grammar {
 
         let mut applied = Vec::new();
 
-        let mut current = self.start;
+        let mut stack = vec![Symbol::nonterminal(self.start)];
         let mut cursor = 0;
 
         'outer: loop {
+            let current = stack.pop().unwrap().into_nonterminal().unwrap().0;
             let look_ahead = &table[&current];
 
             let (peek, &id) = (1..=k)
@@ -37,25 +38,29 @@ impl Grammar {
                     expected: look_ahead.keys().cloned().collect(),
                 })?;
 
-            let symbols = &self.productions[&current][&id];
+            for &symbol in &self.productions[&current][&id] {
+                stack.push(symbol);
+            }
 
-            for symbol in symbols {
+            while let Some(symbol) = stack.pop() {
                 match symbol {
                     Symbol::Epsilon => (),
                     Symbol::Terminal(terminal) => {
-                        dbg!(terminal);
-                        assert_eq!(terminal, &terminals[cursor]);
+                        assert_eq!(&terminal, &terminals[cursor]);
                         cursor += 1;
                     }
-                    Symbol::Nonterminal(nonterminal) => {
+                    Symbol::Nonterminal(_) => {
+                        stack.push(symbol);
                         applied.push((current, id));
-                        current = nonterminal.0;
-                        continue 'outer;
+                        break;
                     }
                 }
             }
-            applied.push((current, id));
-            break;
+
+            if stack.is_empty() {
+                applied.push((current, id));
+                break;
+            }
         }
 
         assert_eq!(cursor, terminals.len());
