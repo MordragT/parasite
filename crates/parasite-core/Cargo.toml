@@ -10,5 +10,4 @@ thiserror = "1.0"
 chumsky = { version = "0.9.3", optional = true }
 
 [features]
-default = []
-combinator = ["chumsky"]
+default = ["chumsky"]

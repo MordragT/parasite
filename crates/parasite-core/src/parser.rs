@@ -1,12 +1,6 @@
 use crate::grammar::{Grammar, Id, Symbol, Terminal, TypeName};
 use thiserror::Error;
 
-#[cfg(feature = "combinator")]
-pub use self::chumsky::*;
-
-#[cfg(feature = "combinator")]
-mod chumsky;
-
 #[derive(Debug, Error)]
 pub enum ParseError {
     #[error("Unexpected {terminal:?} while parsing, expected one of {expected:?}")]

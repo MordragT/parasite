@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-parasite-core = { path = "crates/parasite-core", features = ["combinator"] }
+parasite-core = { path = "crates/parasite-core", features = ["chumsky"] }
 parasite-macros = { path = "crates/parasite-macros" }
 
 [workspace]

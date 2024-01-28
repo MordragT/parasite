@@ -8,10 +8,12 @@ use std::{
 use chumsky::Parser;
 
 use crate::{
-    builder::{NonEmptyVec, Rec, Syntactical},
+    builder::Syntactical,
     grammar::{Grammar, TypeName},
     table::Table,
 };
+
+mod combinators;
 
 // pub struct ParserGenerator<T: Syntactical> {
 //     grammar: Grammar,
@@ -46,22 +48,6 @@ pub trait Parseable<I: Clone>: Sized {
     type Error<'a>: chumsky::Error<I>;
 
     fn parse<'a>() -> impl Parser<I, Self, Error = Self::Error<'a>>;
-}
-
-impl<I: Clone, T: Parseable<I>> Parseable<I> for Rec<T> {
-    type Error<'a> = T::Error<'a>;
-
-    fn parse<'a>() -> impl Parser<I, Self, Error = Self::Error<'a>> {
-        T::parse().map(|t| Rec(Box::new(t)))
-    }
-}
-
-impl<I: Clone, T: Parseable<I>> Parseable<I> for NonEmptyVec<T> {
-    type Error<'a> = T::Error<'a>;
-
-    fn parse<'a>() -> impl Parser<I, Self, Error = Self::Error<'a>> {
-        T::parse().repeated().at_least(1).collect().map(NonEmptyVec)
-    }
 }
 
 impl<I: Clone, T: Parseable<I>> Parseable<I> for Option<T> {

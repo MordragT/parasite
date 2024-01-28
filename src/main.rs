@@ -1,5 +1,6 @@
 use parasite_core::{
-    builder::{Rec, Syntactical},
+    builder::Syntactical,
+    combinators::Rec,
     grammar::{Grammar, TypeName},
 };
 use parasite_macros::*;
@@ -13,7 +14,7 @@ pub enum Branch {
     Leaf(Leaf),
 }
 
-fn main() {
+fn syntactical() {
     let mut grammar = Grammar::new(TypeName::of::<Branch>());
     let mut stack = Vec::new();
 
@@ -21,3 +22,19 @@ fn main() {
 
     dbg!(&grammar);
 }
+
+grammar!(
+    mod ast {
+        #[start]
+        enum S {
+            A((u8, A, u8)),
+        }
+
+        enum A {
+            S((bool, Box<S>, bool)),
+            End,
+        }
+    }
+);
+
+fn main() {}

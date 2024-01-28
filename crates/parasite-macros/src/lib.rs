@@ -38,10 +38,10 @@ pub fn terminal(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn grammar(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as syn::ItemMod);
-    let parser_impl = parser_impl(input);
+    let item_impls = parser_impl(input).into_iter();
 
     quote!(
-        #parser_impl
+        #(#item_impls)*
     )
     .into_token_stream()
     .into()
