@@ -8,7 +8,7 @@ use populate::populate;
 pub mod key;
 pub mod populate;
 
-pub fn grammar_impl(input: ItemMod) -> Vec<ItemImpl> {
+pub fn grammar_check(input: ItemMod) {
     let mut start = None;
     let mut terminals = Vec::new();
 
@@ -20,7 +20,7 @@ pub fn grammar_impl(input: ItemMod) -> Vec<ItemImpl> {
                     let ident = item_enum.ident.clone();
                     let key = TypeKey::new(ident);
 
-                    if attrs_contains(&item_enum.attrs, "start") {
+                    if attrs_contains(&item_enum.attrs, "begin") {
                         assert!(start.replace(key.clone()).is_none());
                     }
 
@@ -57,11 +57,10 @@ pub fn grammar_impl(input: ItemMod) -> Vec<ItemImpl> {
 
             let table = grammar.table(2);
 
-            // generate parseable implementations from populated grammar
-            todo!()
+            // TODO do checks so that it can be verified that grammar is valid
+            // TODO make lookahead as attribute into the proc macro
         }
     }
-    Vec::new()
 }
 
 fn attrs_contains(attrs: &Vec<Attribute>, ident: &str) -> bool {

@@ -1,24 +1,27 @@
-use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet, LinkedList, VecDeque},
-    fmt::Debug,
-    hash::Hash,
-    marker::PhantomData,
-};
-
+use super::Parseable;
+use crate::combinators::{NonEmptyVec, Rec};
 use chumsky::Parser;
 
-impl<I: Clone, T: Parseable<I>> Parseable<I> for Rec<T> {
-    type Error<'a> = T::Error<'a>;
+impl<'a, I, T> Parseable<'a, I> for Rec<T>
+where
+    I: Clone + 'a,
+    T: Parseable<'a, I>,
+{
+    type Error = T::Error;
 
-    fn parse<'a>() -> impl Parser<I, Self, Error = Self::Error<'a>> {
+    fn parse() -> impl Parser<I, Self, Error = Self::Error> {
         T::parse().map(|t| Rec(Box::new(t)))
     }
 }
 
-impl<I: Clone, T: Parseable<I>> Parseable<I> for NonEmptyVec<T> {
-    type Error<'a> = T::Error<'a>;
+impl<'a, I, T> Parseable<'a, I> for NonEmptyVec<T>
+where
+    I: Clone + 'a,
+    T: Parseable<'a, I>,
+{
+    type Error = T::Error;
 
-    fn parse<'a>() -> impl Parser<I, Self, Error = Self::Error<'a>> {
+    fn parse() -> impl Parser<I, Self, Error = Self::Error> {
         T::parse().repeated().at_least(1).collect().map(NonEmptyVec)
     }
 }

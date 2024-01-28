@@ -1,67 +1,39 @@
+pub use chumsky::*;
+
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, LinkedList, VecDeque},
     fmt::Debug,
     hash::Hash,
-    marker::PhantomData,
-};
-
-use chumsky::Parser;
-
-use crate::{
-    builder::Syntactical,
-    grammar::{Grammar, TypeName},
-    table::Table,
 };
 
 mod combinators;
 
-// pub struct ParserGenerator<T: Syntactical> {
-//     grammar: Grammar,
-//     table: Table,
-//     ast_ty: PhantomData<T>,
-// }
+pub trait Parseable<'a, I: Clone + 'a>: Sized {
+    type Error: chumsky::Error<I> = chumsky::error::Cheap<I>;
 
-// impl<T: Syntactical> ParserGenerator<T> {
-//     pub fn new(k: usize) -> Self {
-//         let mut grammar = Grammar::new(TypeName::of::<T>());
-//         let mut stack = Vec::new();
-
-//         T::generate(&mut grammar, &mut stack);
-
-//         let table = grammar.table(k);
-
-//         Self {
-//             grammar,
-//             table,
-//             ast_ty: PhantomData,
-//         }
-//     }
-
-//     pub fn generate(&self) {
-//         todo!()
-//     }
-// }
-
-// TODO reuse Grammar inside proc macro to derive Parseable trait
-
-pub trait Parseable<I: Clone>: Sized {
-    type Error<'a>: chumsky::Error<I>;
-
-    fn parse<'a>() -> impl Parser<I, Self, Error = Self::Error<'a>>;
+    fn parse() -> impl Parser<I, Self, Error = Self::Error>;
 }
 
-impl<I: Clone, T: Parseable<I>> Parseable<I> for Option<T> {
-    type Error<'a> = T::Error<'a>;
+impl<'a, I, T> Parseable<'a, I> for Option<T>
+where
+    I: Clone + 'a,
+    T: Parseable<'a, I>,
+{
+    type Error = T::Error;
 
-    fn parse<'a>() -> impl Parser<I, Self, Error = Self::Error<'a>> {
+    fn parse() -> impl Parser<I, Self, Error = Self::Error> {
         T::parse().or_not()
     }
 }
 
-impl<I: Clone, T: Parseable<I> + Debug, const N: usize> Parseable<I> for [T; N] {
-    type Error<'a> = T::Error<'a>;
+impl<'a, I, T, const N: usize> Parseable<'a, I> for [T; N]
+where
+    I: Clone + 'a,
+    T: Parseable<'a, I> + Debug,
+{
+    type Error = T::Error;
 
-    fn parse<'a>() -> impl Parser<I, Self, Error = Self::Error<'a>> {
+    fn parse() -> impl Parser<I, Self, Error = Self::Error> {
         T::parse()
             .repeated()
             .exactly(N)
@@ -70,70 +42,89 @@ impl<I: Clone, T: Parseable<I> + Debug, const N: usize> Parseable<I> for [T; N] 
     }
 }
 
-impl<I: Clone, T: Parseable<I>> Parseable<I> for Vec<T> {
-    type Error<'a> = T::Error<'a>;
-
-    fn parse<'a>() -> impl Parser<I, Self, Error = Self::Error<'a>> {
-        T::parse().repeated().collect()
-    }
-}
-
-impl<I: Clone, T: Parseable<I>> Parseable<I> for VecDeque<T> {
-    type Error<'a> = T::Error<'a>;
-
-    fn parse<'a>() -> impl Parser<I, Self, Error = Self::Error<'a>> {
-        T::parse().repeated().collect()
-    }
-}
-
-impl<I: Clone, T: Parseable<I>> Parseable<I> for LinkedList<T> {
-    type Error<'a> = T::Error<'a>;
-
-    fn parse<'a>() -> impl Parser<I, Self, Error = Self::Error<'a>> {
-        T::parse().repeated().collect()
-    }
-}
-
-impl<I: Clone, T: Parseable<I> + Eq + Hash> Parseable<I> for HashSet<T> {
-    type Error<'a> = T::Error<'a>;
-
-    fn parse<'a>() -> impl Parser<I, Self, Error = Self::Error<'a>> {
-        T::parse().repeated().collect()
-    }
-}
-
-impl<I: Clone, T: Parseable<I> + Ord + Eq> Parseable<I> for BTreeSet<T> {
-    type Error<'a> = T::Error<'a>;
-
-    fn parse<'a>() -> impl Parser<I, Self, Error = Self::Error<'a>> {
-        T::parse().repeated().collect()
-    }
-}
-
-impl<I, E, K, V> Parseable<I> for HashMap<K, V>
+impl<'a, I, T> Parseable<'a, I> for Vec<T>
 where
-    I: Clone,
-    E: chumsky::Error<I>,
-    K: for<'a> Parseable<I, Error<'a> = E> + Eq + Hash,
-    V: for<'a> Parseable<I, Error<'a> = E>,
+    I: Clone + 'a,
+    T: Parseable<'a, I>,
 {
-    type Error<'a> = E;
+    type Error = T::Error;
 
-    fn parse<'a>() -> impl Parser<I, Self, Error = Self::Error<'a>> {
+    fn parse() -> impl Parser<I, Self, Error = Self::Error> {
+        T::parse().repeated().collect()
+    }
+}
+
+impl<'a, I, T> Parseable<'a, I> for VecDeque<T>
+where
+    I: Clone + 'a,
+    T: Parseable<'a, I>,
+{
+    type Error = T::Error;
+    fn parse() -> impl Parser<I, Self, Error = Self::Error> {
+        T::parse().repeated().collect()
+    }
+}
+
+impl<'a, I, T> Parseable<'a, I> for LinkedList<T>
+where
+    I: Clone + 'a,
+    T: Parseable<'a, I>,
+{
+    type Error = T::Error;
+
+    fn parse() -> impl Parser<I, Self, Error = Self::Error> {
+        T::parse().repeated().collect()
+    }
+}
+
+impl<'a, I, T> Parseable<'a, I> for HashSet<T>
+where
+    I: Clone + 'a,
+    T: Parseable<'a, I> + Eq + Hash,
+{
+    type Error = T::Error;
+
+    fn parse() -> impl Parser<I, Self, Error = Self::Error> {
+        T::parse().repeated().collect()
+    }
+}
+
+impl<'a, I, T> Parseable<'a, I> for BTreeSet<T>
+where
+    I: Clone + 'a,
+    T: Parseable<'a, I> + Eq + Ord,
+{
+    type Error = T::Error;
+
+    fn parse() -> impl Parser<I, Self, Error = Self::Error> {
+        T::parse().repeated().collect()
+    }
+}
+
+impl<'a, I, E, K, V> Parseable<'a, I> for HashMap<K, V>
+where
+    I: Clone + 'a,
+    E: chumsky::Error<I>,
+    K: Parseable<'a, I, Error = E> + Eq + Hash,
+    V: Parseable<'a, I, Error = E>,
+{
+    type Error = E;
+
+    fn parse() -> impl Parser<I, Self, Error = Self::Error> {
         K::parse().then(V::parse()).repeated().collect()
     }
 }
 
-impl<I, E, K, V> Parseable<I> for BTreeMap<K, V>
+impl<'a, I, E, K, V> Parseable<'a, I> for BTreeMap<K, V>
 where
-    I: Clone,
+    I: Clone + 'a,
     E: chumsky::Error<I>,
-    K: for<'a> Parseable<I, Error<'a> = E> + Ord + Eq,
-    V: for<'a> Parseable<I, Error<'a> = E>,
+    K: Parseable<'a, I, Error = E> + Eq + Ord,
+    V: Parseable<'a, I, Error = E>,
 {
-    type Error<'a> = E;
+    type Error = E;
 
-    fn parse<'a>() -> impl Parser<I, Self, Error = Self::Error<'a>> {
+    fn parse() -> impl Parser<I, Self, Error = Self::Error> {
         K::parse().then(V::parse()).repeated().collect()
     }
 }
