@@ -1,19 +1,22 @@
 use crate::grammar::{Grammar, Id, Symbol, Terminals, TypeName};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    hash::Hash,
+};
 
-pub type FirstTable = HashMap<TypeName, FirstSets>;
-pub type FirstSets = HashMap<Id, FirstSet>;
-pub type FirstSet = HashSet<Terminals>;
+pub type FirstTable<Key = TypeName> = HashMap<Key, FirstSets<Key>>;
+pub type FirstSets<Key = TypeName> = HashMap<Id, FirstSet<Key>>;
+pub type FirstSet<Key = TypeName> = HashSet<Terminals<Key>>;
 
-type FirstItem = (Id, (Terminals, VecDeque<Symbol>));
+type FirstItem<Key> = (Id, (Terminals<Key>, VecDeque<Symbol<Key>>));
 
-impl Grammar {
+impl<Key: Clone + Eq + Hash> Grammar<Key> {
     fn first_k_of(
         &self,
         k: usize,
-        of: TypeName,
-        queue: &mut VecDeque<TypeName>,
-        cache: &mut HashMap<TypeName, Vec<FirstItem>>,
+        of: Key,
+        queue: &mut VecDeque<Key>,
+        cache: &mut HashMap<Key, Vec<FirstItem<Key>>>,
     ) {
         if cache[&of]
             .iter()
@@ -35,10 +38,10 @@ impl Grammar {
                         let mut to_push = Vec::new();
                         for (_, (terms, syms)) in &cache[&key] {
                             let mut terminals = terminals.clone();
-                            terminals.extend(terms);
+                            terminals.append(&mut terms.clone());
 
                             let mut syms = syms.clone();
-                            syms.extend(&symbols);
+                            syms.append(&mut symbols.clone());
 
                             to_push.push((id, (terminals, syms)));
                         }
@@ -51,7 +54,7 @@ impl Grammar {
                             items.push(item);
                         }
 
-                        queue.push_back(of);
+                        queue.push_back(of.clone());
                         break;
                     }
                 }
@@ -67,7 +70,7 @@ impl Grammar {
         cache.insert(of, items);
     }
 
-    pub fn first_k(&self, k: usize) -> FirstTable {
+    pub fn first_k(&self, k: usize) -> FirstTable<Key> {
         let mut queue = VecDeque::new();
         let mut cache = HashMap::new();
         let mut table = FirstTable::new();
@@ -81,9 +84,9 @@ impl Grammar {
                 items.push((*id, (Vec::new(), VecDeque::from_iter(symbols.clone()))));
             }
 
-            table.insert(*key, sets);
-            cache.insert(*key, items);
-            queue.push_back(*key);
+            table.insert(key.clone(), sets);
+            cache.insert(key.clone(), items);
+            queue.push_back(key.clone());
         }
 
         while let Some(of) = queue.pop_front() {
@@ -92,7 +95,7 @@ impl Grammar {
 
         for (key, items) in cache {
             for (id, (terminals, _)) in items {
-                table[&key][&id].insert(terminals);
+                table.get_mut(&key).unwrap()[&id].insert(terminals);
             }
         }
 

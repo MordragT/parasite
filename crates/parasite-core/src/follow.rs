@@ -1,14 +1,19 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    hash::Hash,
+    ops::IndexMut,
+};
 
 use super::first::FirstTable;
-use crate::grammar::{Grammar, Symbol, Terminal, TypeName};
+use crate::grammar::{Grammar, Symbol, Terminals, TypeName};
 
-pub type FollowSets = HashMap<TypeName, FollowSet>;
-pub type FollowSet = HashSet<Vec<Terminal>>;
+pub type FollowSets<Key = TypeName> = HashMap<Key, FollowSet<Key>>;
+pub type FollowSet<Key> = HashSet<Terminals<Key>>;
 
-impl Grammar {
-    pub fn follow_k(&self, k: usize, first_table: &FirstTable) -> FollowSets {
-        let mut sets = HashMap::from_iter(self.keys().map(|key| (key, Vec::new())));
+impl<Key: Clone + Eq + Hash> Grammar<Key> {
+    pub fn follow_k(&self, k: usize, first_table: &FirstTable<Key>) -> FollowSets<Key> {
+        let mut sets: HashMap<Key, Vec<FollowItem<Key>>> =
+            HashMap::from_iter(self.keys().map(|key| (key, Vec::new())));
 
         for (key, rule) in &self.productions {
             for (_, symbols) in rule {
@@ -19,15 +24,20 @@ impl Grammar {
                     match symbol {
                         Symbol::Epsilon => (),
                         Symbol::Nonterminal(nonterminal) => {
-                            if let Some(invoked) = invocation.replace(nonterminal.0) {
+                            if let Some(invoked) = invocation.replace(nonterminal.0.clone()) {
                                 let mut terminals = std::mem::replace(&mut terminals, Vec::new());
                                 terminals.truncate(k);
-                                sets[&invoked].push(FollowItem::first(nonterminal.0, terminals));
+                                // sets.entry(invoked).and_modify(|entry| {
+                                //     entry.push(FollowItem::first(nonterminal.0.clone(), terminals))
+                                // });
+                                sets.get_mut(&invoked)
+                                    .unwrap()
+                                    .push(FollowItem::first(nonterminal.0.clone(), terminals))
                             } else {
                                 terminals.clear();
                             }
                         }
-                        Symbol::Terminal(terminal) => terminals.push(*terminal),
+                        Symbol::Terminal(terminal) => terminals.push(terminal.clone()),
                     }
                 }
 
@@ -37,10 +47,14 @@ impl Grammar {
                         // to the production symbol on the lhs of the production containing this symbol
                         // A -> B
                         // follow(A) += follow(B)
-                        sets[&key].push(FollowItem::follow(invoked, terminals));
+                        sets.get_mut(&key)
+                            .unwrap()
+                            .push(FollowItem::follow(invoked, terminals));
                     } else {
                         terminals.truncate(k);
-                        sets[&invoked].push(FollowItem::new(terminals));
+                        sets.get_mut(&invoked)
+                            .unwrap()
+                            .push(FollowItem::new(terminals));
                     }
                 }
             }
@@ -53,19 +67,19 @@ impl Grammar {
                 match item.reference {
                     Reference::Follow(invoked) => {
                         let mut following = sets[&invoked].clone();
-                        sets[&key].append(&mut following);
-                        sets[&key].swap_remove(pos);
-                        queue.push_back(key);
+                        sets.get_mut(&key).unwrap().append(&mut following);
+                        sets.get_mut(&key).unwrap().swap_remove(pos);
+                        queue.push_back(key.clone());
                     }
                     Reference::First(invoked) => {
                         for (_, first_set) in &first_table[&invoked] {
                             for first_item in first_set {
                                 let mut terminals = item.terminals.clone();
-                                terminals.extend(first_item);
-                                sets[&key].push(FollowItem::new(terminals));
+                                terminals.append(&mut first_item.clone());
+                                sets.get_mut(&key).unwrap().push(FollowItem::new(terminals));
                             }
                         }
-                        sets[&key].swap_remove(pos);
+                        sets.get_mut(&key).unwrap().swap_remove(pos);
                     }
                     Reference::None => (),
                 }
@@ -82,27 +96,27 @@ impl Grammar {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct FollowItem {
-    reference: Reference,
-    terminals: Vec<Terminal>,
+struct FollowItem<Key = TypeName> {
+    reference: Reference<Key>,
+    terminals: Terminals<Key>,
 }
 
-impl FollowItem {
-    fn new(terminals: Vec<Terminal>) -> Self {
+impl<Key: Clone + Eq + Hash> FollowItem<Key> {
+    fn new(terminals: Terminals<Key>) -> Self {
         Self {
             reference: Reference::None,
             terminals,
         }
     }
 
-    fn first(reference: TypeName, terminals: Vec<Terminal>) -> Self {
+    fn first(reference: Key, terminals: Terminals<Key>) -> Self {
         Self {
             reference: Reference::First(reference),
             terminals,
         }
     }
 
-    fn follow(reference: TypeName, terminals: Vec<Terminal>) -> Self {
+    fn follow(reference: Key, terminals: Terminals<Key>) -> Self {
         Self {
             reference: Reference::Follow(reference),
             terminals,
@@ -111,9 +125,9 @@ impl FollowItem {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum Reference {
-    Follow(TypeName),
-    First(TypeName),
+enum Reference<Key> {
+    Follow(Key),
+    First(Key),
     None,
 }
 

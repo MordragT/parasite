@@ -5,10 +5,10 @@ use quote::{quote, ToTokens};
 use syn::parse_macro_input;
 use syntactical::{syntactical_impl, terminal_impl};
 
-use crate::parser::parser_impl;
+use crate::grammar::grammar_impl;
 
 // mod builder;
-mod parser;
+mod grammar;
 mod syntactical;
 
 #[proc_macro_derive(Syntactical)]
@@ -38,7 +38,7 @@ pub fn terminal(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn grammar(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as syn::ItemMod);
-    let item_impls = parser_impl(input).into_iter();
+    let item_impls = grammar_impl(input).into_iter();
 
     quote!(
         #(#item_impls)*

@@ -1,8 +1,8 @@
 use crate::grammar::{Grammar, Id, Terminals, TypeName};
-use std::collections::HashMap;
+use std::{collections::HashMap, hash::Hash};
 
-impl Grammar {
-    pub fn table(&self, k: usize) -> Table {
+impl<Key: Clone + Eq + Hash> Grammar<Key> {
+    pub fn table(&self, k: usize) -> Table<Key> {
         let first_table = self.first_k(k);
         let follow_sets = self.follow_k(k, &first_table);
 
@@ -37,8 +37,8 @@ impl Grammar {
     }
 }
 
-pub type Table = HashMap<TypeName, Row>;
-pub type Row = HashMap<Terminals, Id>;
+pub type Table<Key = TypeName> = HashMap<Key, Row<Key>>;
+pub type Row<Key = TypeName> = HashMap<Terminals<Key>, Id>;
 // pub type Set = HashSet<Terminals>;
 
 // #[cfg(test)]
