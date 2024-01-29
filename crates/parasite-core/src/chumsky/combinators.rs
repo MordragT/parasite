@@ -9,8 +9,8 @@ where
 {
     type Error = T::Error;
 
-    fn parse() -> impl Parser<I, Self, Error = Self::Error> {
-        T::parse().map(|t| Rec(Box::new(t)))
+    fn parser() -> impl Parser<I, Self, Error = Self::Error> {
+        T::parser().map(|t| Rec(Box::new(t)))
     }
 }
 
@@ -21,7 +21,11 @@ where
 {
     type Error = T::Error;
 
-    fn parse() -> impl Parser<I, Self, Error = Self::Error> {
-        T::parse().repeated().at_least(1).collect().map(NonEmptyVec)
+    fn parser() -> impl Parser<I, Self, Error = Self::Error> {
+        T::parser()
+            .repeated()
+            .at_least(1)
+            .collect()
+            .map(NonEmptyVec)
     }
 }

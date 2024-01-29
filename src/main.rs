@@ -1,6 +1,10 @@
 use parasite_core::{
     builder::Syntactical,
-    chumsky::{error::Cheap, primitive::just, text::digits, Parseable, Parser},
+    chumsky::{
+        primitive::{empty, just},
+        text::digits,
+        Parseable, Parser,
+    },
     combinators::Rec,
     grammar::{Grammar, TypeName},
 };
@@ -25,33 +29,38 @@ fn syntactical() {
 }
 
 // #[derive(Parseable)]
-pub struct Heading<'a> {
-    level: HeadingLevel<'a>,
+// enum UnitEnum {}
+
+#[derive(Parseable)]
+pub enum Test {
+    Level(HeadingLevel),
+    Content(Content),
+}
+
+#[derive(Parseable)]
+pub struct UnitStruct;
+
+#[derive(Parseable)]
+pub struct TupleStruct(HeadingLevel, Content);
+
+#[derive(Parseable)]
+pub struct Heading {
+    level: HeadingLevel,
     content: Content,
 }
 
-impl<'a> parasite_core::chumsky::Parseable<'a, &'a str> for Heading<'a> {
-    type Error = parasite_core::chumsky::error::Cheap<&'a str>;
-    fn parse() -> impl parasite_core::chumsky::Parser<&'a str, Self, Error = Self::Error> {
-        use parasite_core::chumsky::Parser;
-        <HeadingLevel<'a> as parasite_core::chumsky::Parseable<&'a str>>::parse()
-            .then(<Content as parasite_core::chumsky::Parseable<'a, char>>::parse())
-            .map(|(level, content)| Self { level, content })
-    }
+pub struct HeadingLevel {
+    level: usize,
 }
 
-pub struct HeadingLevel<'a> {
-    level: Vec<&'a str>,
-}
-
-impl<'a> Parseable<'a, &'a str> for HeadingLevel<'a> {
-    fn parse() -> impl Parser<&'a str, Self, Error = Self::Error> {
-        just("=")
+impl<'a> Parseable<'a, char> for HeadingLevel {
+    fn parser() -> impl Parser<char, Self, Error = Self::Error> {
+        just('=')
             .repeated()
             .at_least(1)
             .at_most(8)
-            .collect()
-            .map(|level| HeadingLevel { level })
+            .collect::<String>()
+            .map(|level| HeadingLevel { level: level.len() })
     }
 }
 
@@ -60,7 +69,7 @@ pub struct Content {
 }
 
 impl<'a> Parseable<'a, char> for Content {
-    fn parse() -> impl Parser<char, Self, Error = Self::Error> {
+    fn parser() -> impl Parser<char, Self, Error = Self::Error> {
         digits(10).map(|content| Content { content })
     }
 }
@@ -80,4 +89,14 @@ impl<'a> Parseable<'a, char> for Content {
 //     }
 // );
 
-fn main() {}
+fn main() {
+    let heading = match Heading::parser().parse("==1234") {
+        Ok(heading) => heading,
+        Err(errs) => {
+            for e in errs {
+                println!("{e:?}");
+            }
+            panic!()
+        }
+    };
+}
