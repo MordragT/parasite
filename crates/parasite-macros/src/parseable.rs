@@ -1,8 +1,8 @@
 use proc_macro2::Span;
-use quote::{quote, ToTokens};
+use quote::quote;
 use syn::{
     punctuated::Punctuated, token::Comma, Data, DeriveInput, Expr, ExprClosure, Fields,
-    FieldsNamed, FieldsUnnamed, Ident, Item, ItemImpl, ItemUse, TypePath, Variant,
+    FieldsNamed, FieldsUnnamed, Ident, ItemImpl, TypePath, Variant,
 };
 
 pub fn parseable_impl(parsed: DeriveInput) -> ItemImpl {
@@ -15,18 +15,18 @@ pub fn parseable_impl(parsed: DeriveInput) -> ItemImpl {
     };
 
     let item_impl: ItemImpl = syn::parse_quote!(
-        impl<'a> parasite_core::chumsky::Parseable<'a, char> for #ident {
-            type Error = parasite_core::chumsky::error::Cheap<char>;
+        impl<'a> parasite::chumsky::Parseable<'a, char> for #ident {
+            type Error = parasite::chumsky::error::Simple<char>;
 
-            fn parser() -> impl parasite_core::chumsky::Parser<char, Self, Error = Self::Error> {
-                use parasite_core::chumsky::Parser;
+            fn parser() -> impl parasite::chumsky::Parser<char, Self, Error = Self::Error> {
+                use parasite::chumsky::Parser;
 
                 #expr
             }
         }
     );
 
-    println!("{}", item_impl.to_token_stream());
+    // println!("{}", item_impl.to_token_stream());
 
     item_impl
 }
@@ -74,17 +74,13 @@ fn parse_named_fields_impl(fields: FieldsNamed, ty: TypePath) -> Expr {
         })
         .unzip();
 
-    let map_fn: ExprClosure = syn::parse_quote!(
-        |(#(#vars ,)*)| #ty { #(#vars ,)* }
-    );
-
+    let map_fn = named_map_fn_impl(&vars, &ty);
     let mut calls = types.into_iter();
 
     let first: Option<Expr> = calls
         .next()
-        .map(|ty| syn::parse_quote!(<#ty as parasite_core::chumsky::Parseable<char>>::parser()));
-    let rest =
-        calls.map(|ty| quote!(.then(<#ty as parasite_core::chumsky::Parseable<char>>::parser())));
+        .map(|ty| syn::parse_quote!(<#ty as parasite::chumsky::Parseable<char>>::parser()));
+    let rest = calls.map(|ty| quote!(.then(<#ty as parasite::chumsky::Parseable<char>>::parser())));
 
     if let Some(first) = first {
         syn::parse_quote!(
@@ -109,25 +105,13 @@ fn parse_unnamed_fields_impl(fields: FieldsUnnamed, ty: TypePath) -> Expr {
         })
         .unzip();
 
-    let map_fn: ExprClosure = if vars.len() == 1 {
-        let var = &vars[0];
-
-        syn::parse_quote!(
-            |#var| #ty ( #var )
-        )
-    } else {
-        syn::parse_quote!(
-            |(#(#vars ,)*)| #ty ( #(#vars ,)* )
-        )
-    };
-
+    let map_fn = unnamed_map_fn_impl(&vars, &ty);
     let mut calls = types.into_iter();
 
     let first: Option<Expr> = calls
         .next()
-        .map(|ty| syn::parse_quote!(<#ty as parasite_core::chumsky::Parseable<char>>::parser()));
-    let rest =
-        calls.map(|ty| quote!(.then(<#ty as parasite_core::chumsky::Parseable<char>>::parser())));
+        .map(|ty| syn::parse_quote!(<#ty as parasite::chumsky::Parseable<char>>::parser()));
+    let rest = calls.map(|ty| quote!(.then(<#ty as parasite::chumsky::Parseable<char>>::parser())));
 
     if let Some(first) = first {
         syn::parse_quote!(
@@ -137,5 +121,45 @@ fn parse_unnamed_fields_impl(fields: FieldsUnnamed, ty: TypePath) -> Expr {
         )
     } else {
         syn::parse_quote!()
+    }
+}
+
+fn unnamed_map_fn_impl(vars: &Vec<Ident>, ty: &TypePath) -> ExprClosure {
+    if vars.len() == 1 {
+        let var = &vars[0];
+
+        syn::parse_quote!(
+            |#var| #ty ( #var )
+        )
+    } else {
+        let mut vars_iter = vars.iter();
+        let first = vars_iter.next().unwrap();
+        let tuples = vars_iter.fold(syn::parse_quote!(#first), |accu, var| -> Expr {
+            syn::parse_quote!( (#accu, #var) )
+        });
+
+        syn::parse_quote!(
+            |#tuples| #ty ( #(#vars ,)* )
+        )
+    }
+}
+
+fn named_map_fn_impl(vars: &Vec<Ident>, ty: &TypePath) -> ExprClosure {
+    if vars.len() == 1 {
+        let var = &vars[0];
+
+        syn::parse_quote!(
+            |#var| #ty { #var }
+        )
+    } else {
+        let mut vars_iter = vars.iter();
+        let first = vars_iter.next().unwrap();
+        let tuples = vars_iter.fold(syn::parse_quote!(#first), |accu, var| -> Expr {
+            syn::parse_quote!( (#accu, #var) )
+        });
+
+        syn::parse_quote!(
+            |#tuples| #ty { #(#vars ,)* }
+        )
     }
 }

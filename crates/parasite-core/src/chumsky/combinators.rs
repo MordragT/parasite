@@ -1,10 +1,12 @@
+use std::hash::Hash;
+
 use super::Parseable;
 use crate::combinators::{NonEmptyVec, Rec};
 use chumsky::Parser;
 
 impl<'a, I, T> Parseable<'a, I> for Rec<T>
 where
-    I: Clone + 'a,
+    I: Clone + Hash + Eq + 'a,
     T: Parseable<'a, I>,
 {
     type Error = T::Error;
@@ -16,7 +18,7 @@ where
 
 impl<'a, I, T> Parseable<'a, I> for NonEmptyVec<T>
 where
-    I: Clone + 'a,
+    I: Clone + Hash + Eq + 'a,
     T: Parseable<'a, I>,
 {
     type Error = T::Error;

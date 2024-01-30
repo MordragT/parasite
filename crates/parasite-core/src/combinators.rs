@@ -3,6 +3,7 @@ use crate::{
     grammar::{Grammar, Id, Rule, Symbol, TypeName},
 };
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Rec<T>(pub Box<T>);
 
 impl<T: Syntactical + 'static> Syntactical for Rec<T> {
@@ -21,6 +22,7 @@ impl<T: Syntactical + 'static> Syntactical for Rec<T> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NonEmptyVec<T>(pub Vec<T>);
 
 impl<T: Syntactical + 'static> Syntactical for NonEmptyVec<T> {
