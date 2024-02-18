@@ -54,7 +54,7 @@ pub struct HeadingLevel {
 }
 
 impl<'a> Parseable<'a, char> for HeadingLevel {
-    fn parser() -> impl Parser<char, Self, Error = Self::Error> {
+    fn parser() -> impl Parser<char, Self, Error = Self::Error> + Clone {
         just('=')
             .repeated()
             .at_least(1)
@@ -69,7 +69,7 @@ pub struct Content {
 }
 
 impl<'a> Parseable<'a, char> for Content {
-    fn parser() -> impl Parser<char, Self, Error = Self::Error> {
+    fn parser() -> impl Parser<char, Self, Error = Self::Error> + Clone {
         digits(10).map(|content| Content { content })
     }
 }

@@ -11,7 +11,7 @@ mod combinators;
 pub trait Parseable<'a, I: Hash + Eq + Clone + 'a>: Sized {
     type Error: chumsky::Error<I> = chumsky::error::Simple<I>;
 
-    fn parser() -> impl Parser<I, Self, Error = Self::Error>;
+    fn parser() -> impl Parser<I, Self, Error = Self::Error> + Clone;
 }
 
 impl<'a, I, T> Parseable<'a, I> for Option<T>
@@ -21,7 +21,7 @@ where
 {
     type Error = T::Error;
 
-    fn parser() -> impl Parser<I, Self, Error = Self::Error> {
+    fn parser() -> impl Parser<I, Self, Error = Self::Error> + Clone {
         T::parser().or_not()
     }
 }
@@ -33,7 +33,7 @@ where
 {
     type Error = T::Error;
 
-    fn parser() -> impl Parser<I, Self, Error = Self::Error> {
+    fn parser() -> impl Parser<I, Self, Error = Self::Error> + Clone {
         T::parser()
             .repeated()
             .exactly(N)
@@ -49,7 +49,7 @@ where
 {
     type Error = T::Error;
 
-    fn parser() -> impl Parser<I, Self, Error = Self::Error> {
+    fn parser() -> impl Parser<I, Self, Error = Self::Error> + Clone {
         T::parser().repeated().collect()
     }
 }
@@ -60,7 +60,7 @@ where
     T: Parseable<'a, I>,
 {
     type Error = T::Error;
-    fn parser() -> impl Parser<I, Self, Error = Self::Error> {
+    fn parser() -> impl Parser<I, Self, Error = Self::Error> + Clone {
         T::parser().repeated().collect()
     }
 }
@@ -72,7 +72,7 @@ where
 {
     type Error = T::Error;
 
-    fn parser() -> impl Parser<I, Self, Error = Self::Error> {
+    fn parser() -> impl Parser<I, Self, Error = Self::Error> + Clone {
         T::parser().repeated().collect()
     }
 }
@@ -84,7 +84,7 @@ where
 {
     type Error = T::Error;
 
-    fn parser() -> impl Parser<I, Self, Error = Self::Error> {
+    fn parser() -> impl Parser<I, Self, Error = Self::Error> + Clone {
         T::parser().repeated().collect()
     }
 }
@@ -96,7 +96,7 @@ where
 {
     type Error = T::Error;
 
-    fn parser() -> impl Parser<I, Self, Error = Self::Error> {
+    fn parser() -> impl Parser<I, Self, Error = Self::Error> + Clone {
         T::parser().repeated().collect()
     }
 }
@@ -110,7 +110,7 @@ where
 {
     type Error = E;
 
-    fn parser() -> impl Parser<I, Self, Error = Self::Error> {
+    fn parser() -> impl Parser<I, Self, Error = Self::Error> + Clone {
         K::parser().then(V::parser()).repeated().collect()
     }
 }
@@ -124,7 +124,7 @@ where
 {
     type Error = E;
 
-    fn parser() -> impl Parser<I, Self, Error = Self::Error> {
+    fn parser() -> impl Parser<I, Self, Error = Self::Error> + Clone {
         K::parser().then(V::parser()).repeated().collect()
     }
 }
@@ -138,7 +138,7 @@ where
 {
     type Error = E;
 
-    fn parser() -> impl Parser<I, Self, Error = Self::Error> {
+    fn parser() -> impl Parser<I, Self, Error = Self::Error> + Clone {
         T::parser().then(U::parser())
     }
 }
@@ -153,7 +153,7 @@ where
 {
     type Error = E;
 
-    fn parser() -> impl Parser<I, Self, Error = Self::Error> {
+    fn parser() -> impl Parser<I, Self, Error = Self::Error> + Clone {
         T::parser()
             .then(U::parser())
             .then(V::parser())
@@ -172,7 +172,7 @@ where
 {
     type Error = E;
 
-    fn parser() -> impl Parser<I, Self, Error = Self::Error> {
+    fn parser() -> impl Parser<I, Self, Error = Self::Error> + Clone {
         T::parser()
             .then(U::parser())
             .then(V::parser())

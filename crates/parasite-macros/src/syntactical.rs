@@ -4,7 +4,7 @@ use syn::{DeriveInput, Field, Ident, ItemImpl, Stmt, Variant};
 
 pub fn terminal_impl(ident: Ident) -> ItemImpl {
     syn::parse_quote!(
-        impl parasite_core::builder::Syntactical for #ident {}
+        impl parasite::builder::Syntactical for #ident {}
     )
 }
 
@@ -21,20 +21,20 @@ pub fn syntactical_impl(parsed: DeriveInput) -> ItemImpl {
     };
 
     syn::parse_quote!(
-        impl parasite_core::builder::Syntactical for #ident {
-            fn generate(grammar: &mut parasite_core::grammar::Grammar, stack: &mut Vec<parasite_core::grammar::TypeName>) -> parasite_core::grammar::Symbol {
-                let key = parasite_core::grammar::TypeName::of::<Self>();
+        impl parasite::builder::Syntactical for #ident {
+            fn generate(grammar: &mut parasite::grammar::Grammar, stack: &mut Vec<parasite::grammar::TypeName>) -> parasite::grammar::Symbol {
+                let key = parasite::grammar::TypeName::of::<Self>();
 
                 if !Self::visited(grammar, stack) {
                     stack.push(key);
 
-                    let mut rule = parasite_core::grammar::Rule::new();
+                    let mut rule = parasite::grammar::Rule::new();
                     #rule_stmts
 
                     grammar.insert(key, rule);
                 }
 
-                parasite_core::grammar::Symbol::nonterminal(key)
+                parasite::grammar::Symbol::nonterminal(key)
             }
         }
     )
@@ -42,18 +42,18 @@ pub fn syntactical_impl(parsed: DeriveInput) -> ItemImpl {
 
 fn field_calls(field: Field) -> TokenStream {
     let ty = field.ty;
-    quote!(<#ty as parasite_core::builder::Syntactical>::generate(grammar, stack))
+    quote!(<#ty as parasite::builder::Syntactical>::generate(grammar, stack))
 }
 
 pub fn struct_rule(fields: Vec<Field>) -> Stmt {
     let calls = fields.into_iter().map(field_calls);
-    syn::parse_quote!(rule.insert(parasite_core::grammar::Id(0), vec![#(#calls ,)*]);)
+    syn::parse_quote!(rule.insert(parasite::grammar::Id(0), vec![#(#calls ,)*]);)
 }
 
 pub fn enum_rule(variants: Vec<Variant>) -> impl Iterator<Item = Stmt> {
     variants.into_iter().enumerate().map(|(id, variant)| {
         let Variant { fields, .. } = variant;
         let calls = fields.into_iter().map(field_calls);
-        syn::parse_quote!(rule.insert(parasite_core::grammar::Id(#id), vec![#(#calls ,)*]);)
+        syn::parse_quote!(rule.insert(parasite::grammar::Id(#id), vec![#(#calls ,)*]);)
     })
 }

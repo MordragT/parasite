@@ -18,7 +18,7 @@ pub fn parseable_impl(parsed: DeriveInput) -> ItemImpl {
         impl<'a> parasite::chumsky::Parseable<'a, char> for #ident {
             type Error = parasite::chumsky::error::Simple<char>;
 
-            fn parser() -> impl parasite::chumsky::Parser<char, Self, Error = Self::Error> {
+            fn parser() -> impl parasite::chumsky::Parser<char, Self, Error = Self::Error> + Clone {
                 use parasite::chumsky::Parser;
 
                 #expr
