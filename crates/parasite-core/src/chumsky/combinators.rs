@@ -1,122 +1,169 @@
 use std::hash::Hash;
 
-use super::Parseable;
+use super::{Context, Parseable};
 use crate::combinators::{
     Any, DelimitedBy, End, Identifier, Just, NewLine, NonEmptyVec, PaddedBy, Rec, SeparatedBy,
     WhiteSpace,
 };
 use chumsky::{
     primitive::{any, just},
+    recursive::Recursive,
     text::{self, newline, whitespace, Character},
-    Parser,
+    BoxedParser, Parser,
 };
 
-impl<'a, I, T> Parseable<'a, I> for Rec<T>
+impl<I, T> Parseable<'static, I> for Rec<T>
 where
-    I: Clone + Hash + Eq + 'a,
-    T: Parseable<'a, I>,
+    I: Clone + Hash + Eq + 'static,
+    T: Parseable<'static, I> + 'static,
 {
     type Error = T::Error;
 
-    fn parser() -> impl Parser<I, Self, Error = Self::Error> + Clone {
-        T::parser().map(|t| Rec(Box::new(t)))
+    fn parser(ctx: &mut Context) -> BoxedParser<'static, I, Self, Self::Error> {
+        ctx.get::<Recursive<'static, I, T, Self::Error>>()
+            .unwrap()
+            .clone()
+            .map(|t| Rec(Box::new(t)))
+            .boxed()
     }
 }
 
-impl<'a, I, T> Parseable<'a, I> for NonEmptyVec<T>
+impl<I, T> Parseable<'static, I> for NonEmptyVec<T>
 where
-    I: Clone + Hash + Eq + 'a,
-    T: Parseable<'a, I>,
+    I: Clone + Hash + Eq + 'static,
+    T: Parseable<'static, I> + 'static,
 {
     type Error = T::Error;
 
-    fn parser() -> impl Parser<I, Self, Error = Self::Error> + Clone {
-        T::parser()
-            .repeated()
-            .at_least(1)
-            .collect()
-            .map(NonEmptyVec)
+    fn parser(ctx: &mut Context) -> BoxedParser<'static, I, Self, Self::Error> {
+        if !ctx.contains::<BoxedParser<'static, I, Self, Self::Error>>() {
+            let t = T::parser(ctx);
+
+            let parser = t.repeated().at_least(1).collect().map(NonEmptyVec).boxed();
+
+            ctx.insert(parser);
+        }
+
+        ctx.get::<BoxedParser<'static, I, Self, Self::Error>>()
+            .unwrap()
+            .clone()
     }
 }
 
-impl<'a, I, S, T> Parseable<'a, I> for SeparatedBy<S, T>
+impl<I, S, T> Parseable<'static, I> for SeparatedBy<S, T>
 where
-    I: Clone + Hash + Eq + 'a,
-    T: Parseable<'a, I>,
-    S: Parseable<'a, I, Error = T::Error>,
+    I: Clone + Hash + Eq + 'static,
+    T: Parseable<'static, I> + 'static,
+    S: Parseable<'static, I, Error = T::Error> + 'static,
 {
     type Error = T::Error;
 
-    fn parser() -> impl Parser<I, Self, Error = Self::Error> + Clone {
-        T::parser()
-            .separated_by(S::parser())
-            .at_least(1)
-            .collect()
-            .map(SeparatedBy::new)
+    fn parser(ctx: &mut Context) -> BoxedParser<'static, I, Self, Self::Error> {
+        if !ctx.contains::<BoxedParser<'static, I, Self, Self::Error>>() {
+            let t = T::parser(ctx);
+            let s = S::parser(ctx);
+
+            let parser = t
+                .separated_by(s)
+                .at_least(1)
+                .collect()
+                .map(SeparatedBy::<S, T>::new)
+                .boxed();
+
+            ctx.insert(parser);
+        }
+
+        ctx.get::<BoxedParser<'static, I, Self, Self::Error>>()
+            .unwrap()
+            .clone()
     }
 }
 
-impl<'a, I, P, T> Parseable<'a, I> for PaddedBy<P, T>
+impl<I, P, T> Parseable<'static, I> for PaddedBy<P, T>
 where
-    I: Clone + Hash + Eq + 'a,
-    T: Parseable<'a, I>,
-    P: Parseable<'a, I, Error = T::Error>,
+    I: Clone + Hash + Eq + 'static,
+    T: Parseable<'static, I> + 'static,
+    P: Parseable<'static, I, Error = T::Error> + 'static,
 {
     type Error = T::Error;
 
-    fn parser() -> impl Parser<I, Self, Error = Self::Error> + Clone {
-        T::parser().padded_by(P::parser()).map(PaddedBy::new)
+    fn parser(ctx: &mut Context) -> BoxedParser<'static, I, Self, Self::Error> {
+        if !ctx.contains::<BoxedParser<'static, I, Self, Self::Error>>() {
+            let t = T::parser(ctx);
+            let p = P::parser(ctx);
+
+            let parser = t.padded_by(p).map(PaddedBy::<P, T>::new).boxed();
+
+            ctx.insert(parser);
+        }
+
+        ctx.get::<BoxedParser<'static, I, Self, Self::Error>>()
+            .unwrap()
+            .clone()
     }
 }
 
-impl<'a, I, L, R, T> Parseable<'a, I> for DelimitedBy<L, R, T>
+impl<I, L, R, T> Parseable<'static, I> for DelimitedBy<L, R, T>
 where
-    I: Clone + Hash + Eq + 'a,
-    T: Parseable<'a, I>,
-    L: Parseable<'a, I, Error = T::Error> + Clone,
-    R: Parseable<'a, I, Error = T::Error> + Clone,
+    I: Clone + Hash + Eq + 'static,
+    T: Parseable<'static, I> + 'static,
+    L: Parseable<'static, I, Error = T::Error> + 'static,
+    R: Parseable<'static, I, Error = T::Error> + 'static,
 {
     type Error = T::Error;
 
-    fn parser() -> impl Parser<I, Self, Error = Self::Error> + Clone {
-        T::parser()
-            .delimited_by(L::parser(), R::parser())
-            .map(DelimitedBy::new)
+    fn parser(ctx: &mut Context) -> BoxedParser<'static, I, Self, Self::Error> {
+        if !ctx.contains::<BoxedParser<'static, I, Self, Self::Error>>() {
+            let t = T::parser(ctx);
+            let l = L::parser(ctx);
+            let r = R::parser(ctx);
+
+            let parser = t
+                .delimited_by(l, r)
+                .map(DelimitedBy::<L, R, T>::new)
+                .boxed();
+
+            ctx.insert(parser);
+        }
+
+        ctx.get::<BoxedParser<'static, I, Self, Self::Error>>()
+            .unwrap()
+            .clone()
     }
 }
 
-impl<const CHAR: char> Parseable<'_, char> for Just<CHAR> {
-    fn parser() -> impl Parser<char, Self, Error = Self::Error> + Clone {
-        just(CHAR).to(Self())
+impl<'a, const CHAR: char> Parseable<'a, char> for Just<CHAR> {
+    fn parser(_: &mut Context) -> BoxedParser<'a, char, Self, Self::Error> {
+        just(CHAR).to(Self()).boxed()
     }
 }
 
-impl Parseable<'_, char> for End {
-    fn parser() -> impl Parser<char, Self, Error = Self::Error> + Clone {
-        chumsky::primitive::end().to(Self)
+impl<'a> Parseable<'a, char> for End {
+    fn parser(_: &mut Context) -> BoxedParser<'a, char, Self, Self::Error> {
+        chumsky::primitive::end().to(Self).boxed()
     }
 }
 
-impl Parseable<'_, char> for Any {
-    fn parser() -> impl Parser<char, Self, Error = Self::Error> + Clone {
-        any().map(Any)
+impl<'a> Parseable<'a, char> for Any {
+    fn parser(_: &mut Context) -> BoxedParser<'a, char, Self, Self::Error> {
+        any().map(Any).boxed()
     }
 }
 
-impl<'a, I: Character + Eq + Hash + 'a> Parseable<'a, I> for NewLine {
-    fn parser() -> impl Parser<I, Self, Error = Self::Error> + Clone {
-        newline().to(Self)
+impl<'a, I: Character + Eq + Hash + 'static> Parseable<'a, I> for NewLine {
+    fn parser(_: &mut Context) -> BoxedParser<'static, I, Self, Self::Error> {
+        newline().to(Self).boxed()
     }
 }
 
-impl Parseable<'_, char> for WhiteSpace {
-    fn parser() -> impl Parser<char, Self, Error = Self::Error> + Clone {
-        whitespace().to(WhiteSpace)
+impl<'a> Parseable<'a, char> for WhiteSpace {
+    fn parser(_: &mut Context) -> BoxedParser<'a, char, Self, Self::Error> {
+        whitespace().to(WhiteSpace).boxed()
     }
 }
 
-impl Parseable<'_, char> for Identifier {
-    fn parser() -> impl Parser<char, Self, Error = Self::Error> + Clone {
-        text::ident().map(Identifier)
+impl<'a> Parseable<'a, char> for Identifier {
+    fn parser(_: &mut Context) -> BoxedParser<'a, char, Self, Self::Error> {
+        text::ident().map(Identifier).boxed()
     }
 }

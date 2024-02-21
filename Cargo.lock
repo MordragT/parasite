@@ -21,6 +21,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0942ffc6dcaadf03badf6e6a2d0228460359d5e34b57ccdc720b7382dfbd5ec5"
 
 [[package]]
+name = "anymap3"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9316150bf847270bd54e404c3fb1c5d3c6af118b3f0c3b42097da5ceafbe7c27"
+
+[[package]]
 name = "cc"
 version = "1.0.83"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -79,6 +85,7 @@ dependencies = [
 name = "parasite-core"
 version = "0.1.0"
 dependencies = [
+ "anymap3",
  "chumsky",
  "thiserror",
 ]

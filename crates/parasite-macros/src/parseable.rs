@@ -1,8 +1,8 @@
 use proc_macro2::Span;
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::{
     punctuated::Punctuated, token::Comma, Data, DeriveInput, Expr, ExprClosure, Fields,
-    FieldsNamed, FieldsUnnamed, Ident, ItemImpl, TypePath, Variant,
+    FieldsNamed, FieldsUnnamed, Ident, ItemImpl, Stmt, TypePath, Variant,
 };
 
 pub fn parseable_impl(parsed: DeriveInput) -> ItemImpl {
@@ -15,13 +15,21 @@ pub fn parseable_impl(parsed: DeriveInput) -> ItemImpl {
     };
 
     let item_impl: ItemImpl = syn::parse_quote!(
-        impl<'a> parasite::chumsky::Parseable<'a, char> for #ident {
+        impl parasite::chumsky::Parseable<'static, char> for #ident {
             type Error = parasite::chumsky::error::Simple<char>;
 
-            fn parser() -> impl parasite::chumsky::Parser<char, Self, Error = Self::Error> + Clone {
+            fn parser(ctx: &mut parasite::chumsky::Context) -> parasite::chumsky::BoxedParser<'static, char, Self, Self::Error> {
                 use parasite::chumsky::Parser;
 
-                #expr
+                if !ctx.contains::<parasite::chumsky::BoxedParser<'static, char, Self, Self::Error>>() {
+                    let parser = #expr ;
+                    ctx.insert(parser.boxed());
+                }
+
+                ctx.get::<parasite::chumsky::BoxedParser<'static, char, Self, Self::Error>>()
+                    .unwrap()
+                    .clone()
+
             }
         }
     );
@@ -35,19 +43,29 @@ pub fn parseable_impl(parsed: DeriveInput) -> ItemImpl {
 type Variants = Punctuated<Variant, Comma>;
 
 fn parse_variants_impl(variants: Variants, ident: Ident) -> Expr {
-    let mut variants = variants.into_iter().map(|variant| {
-        // let ident = Ident::new(&format!("{ident}::{}", variant.ident), Span::call_site());
-        let variant_ident = variant.ident;
-        let ty: TypePath = syn::parse_quote!(#ident::#variant_ident);
-        parse_fields_impl(variant.fields, ty)
-    });
+    let (calls, vars): (Vec<_>, Vec<_>) = variants
+        .into_iter()
+        .enumerate()
+        .map(|(i, variant)| {
+            let variant_ident = variant.ident;
+            let ty: TypePath = syn::parse_quote!(#ident::#variant_ident);
+            let expr = parse_fields_impl(variant.fields, ty);
 
-    if let Some(first) = variants.next() {
-        // let ors = variants.map(|expr| -> Expr { syn::parse_quote!(or(#expr)) });
+            let var = Ident::new(&format!("variant_{i}"), Span::call_site());
+            let call: Stmt = syn::parse_quote!(let #var = #expr;);
 
-        syn::parse_quote!(
-            #first #( .or ( #variants ) ) *
-        )
+            (call, var)
+        })
+        .unzip();
+
+    let mut vars_iter = vars.into_iter();
+
+    if let Some(first) = vars_iter.next() {
+        syn::parse_quote!({
+            #(#calls)*
+
+            #first #( .or ( #vars_iter ) ) *
+        })
     } else {
         // syn::parse_quote!(empty().map(|_| #ident {}))
         panic!()
@@ -59,66 +77,79 @@ fn parse_fields_impl(fields: Fields, ty: TypePath) -> Expr {
         Fields::Named(fields) => parse_named_fields_impl(fields, ty),
         Fields::Unnamed(fields) => parse_unnamed_fields_impl(fields, ty),
         // unit struct like struct Phantom;
-        Fields::Unit => syn::parse_quote!(empty().map(|_| #ty)),
+        Fields::Unit => syn::parse_quote!(empty::<Self::Error>().map(|_| #ty)),
     }
 }
 
 fn parse_named_fields_impl(fields: FieldsNamed, ty: TypePath) -> Expr {
-    let (vars, types): (Vec<_>, Vec<_>) = fields
-        .named
-        .into_iter()
-        .map(|field| {
-            let var = field.ident.unwrap();
-            let ty = field.ty;
-            (var, ty)
+    let fields = fields.named.into_iter().map(|field| {
+        let var = field.ident.unwrap();
+        let ty = field.ty;
+        (var, ty)
+    });
+
+    let (calls, idents): (Vec<_>, Vec<_>) = fields
+        .map(|(ident, ty)| {
+            let stmt: Stmt = syn::parse_quote!(
+                let #ident = <#ty as parasite::chumsky::Parseable<char>>::parser(ctx);
+            );
+            (stmt, ident)
         })
         .unzip();
 
-    let map_fn = named_map_fn_impl(&vars, &ty);
-    let mut calls = types.into_iter();
+    let map_fn = named_map_fn_impl(&idents, &ty);
 
-    let first: Option<Expr> = calls
-        .next()
-        .map(|ty| syn::parse_quote!(<#ty as parasite::chumsky::Parseable<char>>::parser()));
-    let rest = calls.map(|ty| quote!(.then(<#ty as parasite::chumsky::Parseable<char>>::parser())));
+    let mut idents_iter = idents.into_iter();
+    let first: Option<Expr> = idents_iter.next().map(|ident| syn::parse_quote!(#ident));
+    let rest = idents_iter.map(|ident| quote!(.then(#ident)));
 
     if let Some(first) = first {
-        syn::parse_quote!(
+        syn::parse_quote!({
+            #(#calls)*
+
             #first
                 #(#rest)*
                 .map( #map_fn )
-        )
+        })
     } else {
-        syn::parse_quote!(empty().map(|_| #ty {}))
+        syn::parse_quote!({
+            #(#calls)*
+
+            empty().map(|_| #ty {})
+        })
     }
 }
 
 fn parse_unnamed_fields_impl(fields: FieldsUnnamed, ty: TypePath) -> Expr {
-    let (vars, types): (Vec<_>, Vec<_>) = fields
-        .unnamed
-        .into_iter()
-        .enumerate()
-        .map(|(i, field)| {
-            let var = Ident::new(&format!("item_{}", i), Span::call_site());
-            let ty = field.ty;
-            (var, ty)
+    let fields = fields.unnamed.into_iter().enumerate().map(|(i, field)| {
+        let var = Ident::new(&format!("item_{}", i), Span::call_site());
+        let ty = field.ty;
+        (var, ty)
+    });
+
+    let (calls, idents): (Vec<_>, Vec<_>) = fields
+        .map(|(ident, ty)| {
+            let stmt: Stmt = syn::parse_quote!(
+                let #ident = <#ty as parasite::chumsky::Parseable<char>>::parser(ctx);
+            );
+            (stmt, ident)
         })
         .unzip();
 
-    let map_fn = unnamed_map_fn_impl(&vars, &ty);
-    let mut calls = types.into_iter();
+    let map_fn = unnamed_map_fn_impl(&idents, &ty);
 
-    let first: Option<Expr> = calls
-        .next()
-        .map(|ty| syn::parse_quote!(<#ty as parasite::chumsky::Parseable<char>>::parser()));
-    let rest = calls.map(|ty| quote!(.then(<#ty as parasite::chumsky::Parseable<char>>::parser())));
+    let mut idents_iter = idents.into_iter();
+    let first: Option<Expr> = idents_iter.next().map(|ident| syn::parse_quote!(#ident));
+    let rest = idents_iter.map(|ident| quote!(.then(#ident)));
 
     if let Some(first) = first {
-        syn::parse_quote!(
+        syn::parse_quote!({
+            #(#calls)*
+
             #first
                 #(#rest)*
                 .map( #map_fn )
-        )
+        })
     } else {
         syn::parse_quote!()
     }

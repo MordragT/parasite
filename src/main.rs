@@ -3,9 +3,9 @@ use parasite_core::{
     chumsky::{
         primitive::{empty, just},
         text::digits,
-        Parseable, Parser,
+        BoxedParser, Context, Parseable, Parser,
     },
-    combinators::Rec,
+    combinators::{Just, Rec},
     grammar::{Grammar, TypeName},
 };
 use parasite_macros::*;
@@ -32,6 +32,15 @@ fn syntactical() {
 // enum UnitEnum {}
 
 #[derive(Parseable)]
+struct Simple {
+    a: Just<'a'>,
+    b: Just<'b'>,
+}
+
+#[derive(Parseable)]
+pub struct SimpleTuple(Just<'a'>, Just<'b'>);
+
+#[derive(Parseable)]
 pub enum Test {
     Level(HeadingLevel),
     Content(Content),
@@ -54,13 +63,14 @@ pub struct HeadingLevel {
 }
 
 impl<'a> Parseable<'a, char> for HeadingLevel {
-    fn parser() -> impl Parser<char, Self, Error = Self::Error> + Clone {
+    fn parser(ctx: &mut Context) -> BoxedParser<'a, char, Self, Self::Error> {
         just('=')
             .repeated()
             .at_least(1)
             .at_most(8)
             .collect::<String>()
             .map(|level| HeadingLevel { level: level.len() })
+            .boxed()
     }
 }
 
@@ -69,8 +79,8 @@ pub struct Content {
 }
 
 impl<'a> Parseable<'a, char> for Content {
-    fn parser() -> impl Parser<char, Self, Error = Self::Error> + Clone {
-        digits(10).map(|content| Content { content })
+    fn parser(ctx: &mut Context) -> BoxedParser<'a, char, Self, Self::Error> {
+        digits(10).map(|content| Content { content }).boxed()
     }
 }
 
@@ -90,7 +100,9 @@ impl<'a> Parseable<'a, char> for Content {
 // );
 
 fn main() {
-    let heading = match Heading::parser().parse("==1234") {
+    let mut ctx = Context::new();
+
+    let heading = match Heading::parser(&mut ctx).parse("==1234") {
         Ok(heading) => heading,
         Err(errs) => {
             for e in errs {
