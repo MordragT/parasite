@@ -1,45 +1,45 @@
-use crate::grammar::{Grammar, Id, Rule, Symbol, TypeName};
+use crate::grammar::{Grammar, Id, Key, Rule, Symbol};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, LinkedList, VecDeque};
 pub trait Syntactical {
-    fn generate(_grammar: &mut Grammar, _stack: &mut Vec<TypeName>) -> Symbol {
-        Symbol::terminal(TypeName::of::<Self>())
+    fn generate(_grammar: &mut Grammar, _stack: &mut Vec<Key>) -> Symbol {
+        Symbol::terminal(Key::of::<Self>())
     }
 
-    fn visited(grammar: &Grammar, stack: &Vec<TypeName>) -> bool {
-        let key = TypeName::of::<Self>();
+    fn visited(grammar: &Grammar, stack: &Vec<Key>) -> bool {
+        let key = Key::of::<Self>();
         grammar.contains(&key) || stack.contains(&key)
     }
 }
 
 impl<T: Syntactical + 'static> Syntactical for Option<T> {
-    fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
-        let key = TypeName::of::<Self>();
+    fn generate(grammar: &mut Grammar, stack: &mut Vec<Key>) -> Symbol {
+        let key = Key::of::<Self>();
 
         if !Self::visited(grammar, stack) {
-            stack.push(key);
+            stack.push(key.clone());
 
             let mut rule = Rule::new();
             rule.insert(Id(0), vec![T::generate(grammar, stack)]);
             rule.insert(Id(1), vec![Symbol::Epsilon]);
 
-            grammar.insert(key, rule);
+            grammar.insert(key.clone(), rule);
         }
         Symbol::nonterminal(key)
     }
 }
 
 impl<T: Syntactical + 'static, const N: usize> Syntactical for [T; N] {
-    fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
-        let key = TypeName::of::<Self>();
+    fn generate(grammar: &mut Grammar, stack: &mut Vec<Key>) -> Symbol {
+        let key = Key::of::<Self>();
 
         if !Self::visited(grammar, stack) {
-            stack.push(key);
+            stack.push(key.clone());
 
             let child = T::generate(grammar, stack);
             let mut rule = Rule::new();
             rule.insert(Id(0), vec![child; N]);
 
-            grammar.insert(key, rule);
+            grammar.insert(key.clone(), rule);
         }
 
         Symbol::nonterminal(key)
@@ -47,15 +47,15 @@ impl<T: Syntactical + 'static, const N: usize> Syntactical for [T; N] {
 }
 
 impl<T: Syntactical + 'static> Syntactical for Vec<T> {
-    fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
-        let key = TypeName::of::<Self>();
-        let symbol = Symbol::nonterminal(key);
+    fn generate(grammar: &mut Grammar, stack: &mut Vec<Key>) -> Symbol {
+        let key = Key::of::<Self>();
+        let symbol = Symbol::nonterminal(key.clone());
 
         if !Self::visited(grammar, stack) {
-            stack.push(key);
+            stack.push(key.clone());
 
             let mut rule = Rule::new();
-            rule.insert(Id(0), vec![T::generate(grammar, stack), symbol]);
+            rule.insert(Id(0), vec![T::generate(grammar, stack), symbol.clone()]);
             rule.insert(Id(1), vec![Symbol::Epsilon]);
 
             grammar.insert(key, rule);
@@ -66,15 +66,15 @@ impl<T: Syntactical + 'static> Syntactical for Vec<T> {
 }
 
 impl<T: Syntactical + 'static> Syntactical for VecDeque<T> {
-    fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
-        let key = TypeName::of::<Self>();
-        let symbol = Symbol::nonterminal(key);
+    fn generate(grammar: &mut Grammar, stack: &mut Vec<Key>) -> Symbol {
+        let key = Key::of::<Self>();
+        let symbol = Symbol::nonterminal(key.clone());
 
         if !Self::visited(grammar, stack) {
-            stack.push(key);
+            stack.push(key.clone());
 
             let mut rule = Rule::new();
-            rule.insert(Id(0), vec![T::generate(grammar, stack), symbol]);
+            rule.insert(Id(0), vec![T::generate(grammar, stack), symbol.clone()]);
             rule.insert(Id(1), vec![Symbol::Epsilon]);
 
             grammar.insert(key, rule);
@@ -85,15 +85,15 @@ impl<T: Syntactical + 'static> Syntactical for VecDeque<T> {
 }
 
 impl<T: Syntactical + 'static> Syntactical for LinkedList<T> {
-    fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
-        let key = TypeName::of::<Self>();
-        let symbol = Symbol::nonterminal(key);
+    fn generate(grammar: &mut Grammar, stack: &mut Vec<Key>) -> Symbol {
+        let key = Key::of::<Self>();
+        let symbol = Symbol::nonterminal(key.clone());
 
         if !Self::visited(grammar, stack) {
-            stack.push(key);
+            stack.push(key.clone());
 
             let mut rule = Rule::new();
-            rule.insert(Id(0), vec![T::generate(grammar, stack), symbol]);
+            rule.insert(Id(0), vec![T::generate(grammar, stack), symbol.clone()]);
             rule.insert(Id(1), vec![Symbol::Epsilon]);
 
             grammar.insert(key, rule);
@@ -104,15 +104,15 @@ impl<T: Syntactical + 'static> Syntactical for LinkedList<T> {
 }
 
 impl<T: Syntactical + 'static> Syntactical for HashSet<T> {
-    fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
-        let key = TypeName::of::<Self>();
-        let symbol = Symbol::nonterminal(key);
+    fn generate(grammar: &mut Grammar, stack: &mut Vec<Key>) -> Symbol {
+        let key = Key::of::<Self>();
+        let symbol = Symbol::nonterminal(key.clone());
 
         if !Self::visited(grammar, stack) {
-            stack.push(key);
+            stack.push(key.clone());
 
             let mut rule = Rule::new();
-            rule.insert(Id(0), vec![T::generate(grammar, stack), symbol]);
+            rule.insert(Id(0), vec![T::generate(grammar, stack), symbol.clone()]);
             rule.insert(Id(1), vec![Symbol::Epsilon]);
 
             grammar.insert(key, rule);
@@ -123,15 +123,15 @@ impl<T: Syntactical + 'static> Syntactical for HashSet<T> {
 }
 
 impl<T: Syntactical + 'static> Syntactical for BTreeSet<T> {
-    fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
-        let key = TypeName::of::<Self>();
-        let symbol = Symbol::nonterminal(key);
+    fn generate(grammar: &mut Grammar, stack: &mut Vec<Key>) -> Symbol {
+        let key = Key::of::<Self>();
+        let symbol = Symbol::nonterminal(key.clone());
 
         if !Self::visited(grammar, stack) {
-            stack.push(key);
+            stack.push(key.clone());
 
             let mut rule = Rule::new();
-            rule.insert(Id(0), vec![T::generate(grammar, stack), symbol]);
+            rule.insert(Id(0), vec![T::generate(grammar, stack), symbol.clone()]);
             rule.insert(Id(1), vec![Symbol::Epsilon]);
 
             grammar.insert(key, rule);
@@ -142,12 +142,12 @@ impl<T: Syntactical + 'static> Syntactical for BTreeSet<T> {
 }
 
 impl<K: Syntactical + 'static, V: Syntactical + 'static> Syntactical for HashMap<K, V> {
-    fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
-        let key = TypeName::of::<Self>();
-        let symbol = Symbol::nonterminal(key);
+    fn generate(grammar: &mut Grammar, stack: &mut Vec<Key>) -> Symbol {
+        let key = Key::of::<Self>();
+        let symbol = Symbol::nonterminal(key.clone());
 
         if !Self::visited(grammar, stack) {
-            stack.push(key);
+            stack.push(key.clone());
 
             let mut rule = Rule::new();
             rule.insert(
@@ -155,7 +155,7 @@ impl<K: Syntactical + 'static, V: Syntactical + 'static> Syntactical for HashMap
                 vec![
                     K::generate(grammar, stack),
                     V::generate(grammar, stack),
-                    symbol,
+                    symbol.clone(),
                 ],
             );
             rule.insert(Id(1), vec![Symbol::Epsilon]);
@@ -168,12 +168,12 @@ impl<K: Syntactical + 'static, V: Syntactical + 'static> Syntactical for HashMap
 }
 
 impl<K: Syntactical + 'static, V: Syntactical + 'static> Syntactical for BTreeMap<K, V> {
-    fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
-        let key = TypeName::of::<Self>();
-        let symbol = Symbol::nonterminal(key);
+    fn generate(grammar: &mut Grammar, stack: &mut Vec<Key>) -> Symbol {
+        let key = Key::of::<Self>();
+        let symbol = Symbol::nonterminal(key.clone());
 
         if !Self::visited(grammar, stack) {
-            stack.push(key);
+            stack.push(key.clone());
 
             let mut rule = Rule::new();
             rule.insert(
@@ -181,7 +181,7 @@ impl<K: Syntactical + 'static, V: Syntactical + 'static> Syntactical for BTreeMa
                 vec![
                     K::generate(grammar, stack),
                     V::generate(grammar, stack),
-                    symbol,
+                    symbol.clone(),
                 ],
             );
             rule.insert(Id(1), vec![Symbol::Epsilon]);
@@ -200,11 +200,11 @@ where
     T: Syntactical + 'static,
     U: Syntactical + 'static,
 {
-    fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
-        let key = TypeName::of::<Self>();
+    fn generate(grammar: &mut Grammar, stack: &mut Vec<Key>) -> Symbol {
+        let key = Key::of::<Self>();
 
         if !Self::visited(grammar, stack) {
-            stack.push(key);
+            stack.push(key.clone());
 
             let mut rule = Rule::new();
             rule.insert(
@@ -212,7 +212,7 @@ where
                 vec![T::generate(grammar, stack), U::generate(grammar, stack)],
             );
 
-            grammar.insert(key, rule);
+            grammar.insert(key.clone(), rule);
         }
 
         Symbol::nonterminal(key)
@@ -225,11 +225,11 @@ where
     U: Syntactical + 'static,
     V: Syntactical + 'static,
 {
-    fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
-        let key = TypeName::of::<Self>();
+    fn generate(grammar: &mut Grammar, stack: &mut Vec<Key>) -> Symbol {
+        let key = Key::of::<Self>();
 
         if !Self::visited(grammar, stack) {
-            stack.push(key);
+            stack.push(key.clone());
 
             let mut rule = Rule::new();
             rule.insert(
@@ -241,7 +241,7 @@ where
                 ],
             );
 
-            grammar.insert(key, rule);
+            grammar.insert(key.clone(), rule);
         }
 
         Symbol::nonterminal(key)
@@ -255,11 +255,11 @@ where
     V: Syntactical + 'static,
     W: Syntactical + 'static,
 {
-    fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
-        let key = TypeName::of::<Self>();
+    fn generate(grammar: &mut Grammar, stack: &mut Vec<Key>) -> Symbol {
+        let key = Key::of::<Self>();
 
         if !Self::visited(grammar, stack) {
-            stack.push(key);
+            stack.push(key.clone());
 
             let mut rule = Rule::new();
             rule.insert(
@@ -272,7 +272,7 @@ where
                 ],
             );
 
-            grammar.insert(key, rule);
+            grammar.insert(key.clone(), rule);
         }
 
         Symbol::nonterminal(key)

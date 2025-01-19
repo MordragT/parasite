@@ -1,13 +1,14 @@
-use crate::grammar::{Grammar, Id, Terminals, TypeName};
-use std::{collections::HashMap, hash::Hash};
+use owo_colors::OwoColorize;
 
-impl<Key: Clone + Eq + Hash> Grammar<Key> {
-    pub fn table(&self, k: usize) -> Table<Key> {
+use crate::grammar::{Grammar, Id, Key, Terminals};
+use core::fmt;
+use std::{collections::HashMap, ops::Index};
+
+impl Grammar {
+    pub fn table(&self, k: usize) -> Table {
         let first_table = self.first_k(k);
+        println!("{first_table}");
         let follow_sets = self.follow_k(k, &first_table);
-
-        // dbg!(&first_table);
-        // dbg!(&follow_sets);
 
         let mut table = Table::new();
 
@@ -16,8 +17,6 @@ impl<Key: Clone + Eq + Hash> Grammar<Key> {
             let first_sets = &first_table[&key];
 
             for (id, first_set) in first_sets {
-                // let mut set = Set::new();
-
                 for first_item in first_set {
                     if first_item.is_empty() {
                         for follow_item in &follow_sets[&key] {
@@ -27,8 +26,6 @@ impl<Key: Clone + Eq + Hash> Grammar<Key> {
                         row.insert(first_item.clone(), *id);
                     }
                 }
-
-                // row.insert(*id, set);
             }
             table.insert(key, row);
         }
@@ -37,8 +34,49 @@ impl<Key: Clone + Eq + Hash> Grammar<Key> {
     }
 }
 
-pub type Table<Key = TypeName> = HashMap<Key, Row<Key>>;
-pub type Row<Key = TypeName> = HashMap<Terminals<Key>, Id>;
+pub type Row = HashMap<Terminals, Id>;
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Table(HashMap<Key, Row>);
+
+impl Table {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn insert(&mut self, key: Key, row: Row) -> Option<Row> {
+        self.0.insert(key, row)
+    }
+}
+
+impl fmt::Display for Table {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", "LL-k Table".bold())?;
+
+        for (key, row) in &self.0 {
+            writeln!(f, "{}", key.italic())?;
+
+            for (terminals, id) in row {
+                write!(f, "\t{id}:")?;
+                for t in terminals {
+                    write!(f, " {t}")?;
+                }
+                write!(f, "\n")?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl Index<&Key> for Table {
+    type Output = Row;
+
+    fn index(&self, index: &Key) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
 // pub type Set = HashSet<Terminals>;
 
 // #[cfg(test)]

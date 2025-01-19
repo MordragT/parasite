@@ -1,3 +1,4 @@
+use parasite_core::grammar::Key;
 use quote::ToTokens;
 use syn::{Ident, Path, PathSegment, Type, TypeArray, TypePath, TypeTuple};
 
@@ -28,6 +29,13 @@ impl ToTokens for TypeKey {
             Self::Tuple(tuple) => tuple.to_tokens(tokens),
             Self::Path(path) => path.to_tokens(tokens),
         }
+    }
+}
+
+impl Into<Key> for TypeKey {
+    fn into(self) -> Key {
+        let s = self.to_token_stream().to_string();
+        Key::new(s)
     }
 }
 

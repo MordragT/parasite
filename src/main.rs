@@ -6,7 +6,7 @@ use parasite_core::{
         BoxedParser, Context, Parseable, Parser,
     },
     combinators::{Just, Rec},
-    grammar::{Grammar, TypeName},
+    grammar::{Grammar, Key},
 };
 use parasite_macros::*;
 
@@ -20,7 +20,7 @@ pub enum Branch {
 }
 
 fn syntactical() {
-    let mut grammar = Grammar::new(TypeName::of::<Branch>());
+    let mut grammar = Grammar::new(Key::of::<Branch>());
     let mut stack = Vec::new();
 
     Branch::generate(&mut grammar, &mut stack);

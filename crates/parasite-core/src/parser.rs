@@ -1,4 +1,4 @@
-use crate::grammar::{Grammar, Id, Symbol, Terminal, TypeName};
+use crate::grammar::{Grammar, Id, Key, Symbol, Terminal};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -11,16 +11,13 @@ pub enum ParseError {
 }
 
 impl Grammar {
-    pub fn parse(
-        &self,
-        k: usize,
-        terminals: &[Terminal],
-    ) -> Result<Vec<(TypeName, Id)>, ParseError> {
+    pub fn parse(&self, k: usize, terminals: &[Terminal]) -> Result<Vec<(Key, Id)>, ParseError> {
         let table = self.table(k);
 
         let mut applied = Vec::new();
 
-        let mut stack = vec![Symbol::nonterminal(self.start)];
+        let start = Symbol::nonterminal(self.start.clone());
+        let mut stack = vec![start];
         let mut cursor = 0;
 
         loop {
@@ -34,12 +31,12 @@ impl Grammar {
                     look_ahead.get(peek)
                 })
                 .ok_or(ParseError::Unexpected {
-                    terminal: terminals[cursor],
+                    terminal: terminals[cursor].clone(),
                     expected: look_ahead.keys().cloned().collect(),
                 })?;
 
-            for &symbol in &self.productions[&current][&id] {
-                stack.push(symbol);
+            for symbol in &self.productions[&current][&id] {
+                stack.push(symbol.clone());
             }
 
             while let Some(symbol) = stack.pop() {
@@ -51,7 +48,7 @@ impl Grammar {
                     }
                     Symbol::Nonterminal(_) => {
                         stack.push(symbol);
-                        applied.push((current, id));
+                        applied.push((current.clone(), id));
                         break;
                     }
                 }
@@ -74,24 +71,26 @@ mod test {
 
     use crate::{
         builder::Syntactical,
-        grammar::{Grammar, Id, Rule, Symbol, Terminal, TypeName},
+        grammar::{Grammar, Id, Key, Rule, Symbol, Terminal},
     };
 
+    #[allow(dead_code)]
     enum S {
         A((u8, A, u8)),
     }
 
+    #[allow(dead_code)]
     enum A {
         S((bool, Box<S>, bool)),
         End,
     }
 
     impl Syntactical for S {
-        fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
-            let key = TypeName::of::<Self>();
+        fn generate(grammar: &mut Grammar, stack: &mut Vec<Key>) -> Symbol {
+            let key = Key::of::<Self>();
 
             if !Self::visited(grammar, stack) {
-                stack.push(key);
+                stack.push(key.clone());
 
                 let mut rule = Rule::new();
                 rule.insert(
@@ -103,7 +102,7 @@ mod test {
                     ],
                 );
 
-                grammar.insert(key, rule);
+                grammar.insert(key.clone(), rule);
             }
 
             Symbol::nonterminal(key)
@@ -111,11 +110,11 @@ mod test {
     }
 
     impl Syntactical for A {
-        fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
-            let key = TypeName::of::<Self>();
+        fn generate(grammar: &mut Grammar, stack: &mut Vec<Key>) -> Symbol {
+            let key = Key::of::<Self>();
 
             if !Self::visited(grammar, stack) {
-                stack.push(key);
+                stack.push(key.clone());
 
                 let mut rule = Rule::new();
                 rule.insert(
@@ -128,7 +127,7 @@ mod test {
                 );
                 rule.insert(Id(1), vec![Symbol::Epsilon]);
 
-                grammar.insert(key, rule);
+                grammar.insert(key.clone(), rule);
             }
 
             Symbol::nonterminal(key)
@@ -137,61 +136,115 @@ mod test {
 
     #[test]
     fn parse_1() {
-        let mut grammar = Grammar::new(TypeName::of::<S>());
+        let mut grammar = Grammar::new(Key::of::<S>());
         let mut stack = Vec::new();
 
         S::generate(&mut grammar, &mut stack);
 
-        let uint = Terminal(TypeName::of::<u8>());
-        let boolean = Terminal(TypeName::of::<bool>());
+        let uint = Terminal(Key::of::<u8>());
+        let boolean = Terminal(Key::of::<bool>());
 
         let rules = grammar
-            .parse(1, &[uint, boolean, uint, uint, boolean, uint])
+            .parse(
+                1,
+                &[
+                    uint.clone(),
+                    boolean.clone(),
+                    uint.clone(),
+                    uint.clone(),
+                    boolean,
+                    uint,
+                ],
+            )
             .unwrap();
 
-        let a = TypeName::of::<A>();
-        let s = TypeName::of::<S>();
+        let a = Key::of::<A>();
+        let s = Key::of::<S>();
 
-        assert_eq!(rules, vec![(s, Id(0)), (a, Id(0)), (s, Id(0)), (a, Id(1))]);
+        assert_eq!(
+            rules,
+            vec![
+                (s.clone(), Id(0)),
+                (a.clone(), Id(0)),
+                (s, Id(0)),
+                (a, Id(1))
+            ]
+        );
     }
 
     #[test]
     fn parse_2() {
-        let mut grammar = Grammar::new(TypeName::of::<S>());
+        let mut grammar = Grammar::new(Key::of::<S>());
         let mut stack = Vec::new();
 
         S::generate(&mut grammar, &mut stack);
 
-        let uint = Terminal(TypeName::of::<u8>());
-        let boolean = Terminal(TypeName::of::<bool>());
+        let uint = Terminal(Key::of::<u8>());
+        let boolean = Terminal(Key::of::<bool>());
 
         let rules = grammar
-            .parse(2, &[uint, boolean, uint, uint, boolean, uint])
+            .parse(
+                2,
+                &[
+                    uint.clone(),
+                    boolean.clone(),
+                    uint.clone(),
+                    uint.clone(),
+                    boolean,
+                    uint,
+                ],
+            )
             .unwrap();
 
-        let a = TypeName::of::<A>();
-        let s = TypeName::of::<S>();
+        let a = Key::of::<A>();
+        let s = Key::of::<S>();
 
-        assert_eq!(rules, vec![(s, Id(0)), (a, Id(0)), (s, Id(0)), (a, Id(1))]);
+        assert_eq!(
+            rules,
+            vec![
+                (s.clone(), Id(0)),
+                (a.clone(), Id(0)),
+                (s, Id(0)),
+                (a, Id(1))
+            ]
+        );
     }
 
     #[test]
     fn parse_3() {
-        let mut grammar = Grammar::new(TypeName::of::<S>());
+        let mut grammar = Grammar::new(Key::of::<S>());
         let mut stack = Vec::new();
 
         S::generate(&mut grammar, &mut stack);
 
-        let uint = Terminal(TypeName::of::<u8>());
-        let boolean = Terminal(TypeName::of::<bool>());
+        let uint = Terminal(Key::of::<u8>());
+        let boolean = Terminal(Key::of::<bool>());
 
         let rules = grammar
-            .parse(3, &[uint, boolean, uint, uint, boolean, uint])
+            .parse(
+                3,
+                &[
+                    uint.clone(),
+                    boolean.clone(),
+                    uint.clone(),
+                    uint.clone(),
+                    boolean,
+                    uint,
+                ],
+            )
             .unwrap();
 
-        let a = TypeName::of::<A>();
-        let s = TypeName::of::<S>();
+        let a = Key::of::<A>();
+        let s = Key::of::<S>();
 
-        assert_eq!(rules, vec![(s, Id(0)), (a, Id(0)), (s, Id(0)), (a, Id(1))]);
+        assert_eq!(
+            rules,
+            vec![
+                (s.clone(), Id(0)),
+                (a.clone(), Id(0)),
+                (s, Id(0)),
+                (a, Id(1))
+            ]
+        );
     }
 }

@@ -1,22 +1,75 @@
-use crate::grammar::{Grammar, Id, Symbol, Terminals, TypeName};
+use owo_colors::OwoColorize;
+
+use crate::grammar::{Grammar, Id, Key, Symbol, Terminals};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    hash::Hash,
+    fmt,
+    ops::Index,
 };
 
-pub type FirstTable<Key = TypeName> = HashMap<Key, FirstSets<Key>>;
-pub type FirstSets<Key = TypeName> = HashMap<Id, FirstSet<Key>>;
-pub type FirstSet<Key = TypeName> = HashSet<Terminals<Key>>;
+pub type FirstSets = HashMap<Id, FirstSet>;
+pub type FirstSet = HashSet<Terminals>;
 
-type FirstItem<Key> = (Id, (Terminals<Key>, VecDeque<Symbol<Key>>));
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FirstTable(HashMap<Key, FirstSets>);
 
-impl<Key: Clone + Eq + Hash> Grammar<Key> {
+impl FirstTable {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn get(&self, key: &Key) -> Option<&FirstSets> {
+        self.0.get(key)
+    }
+
+    pub fn get_mut(&mut self, key: &Key) -> Option<&mut FirstSets> {
+        self.0.get_mut(key)
+    }
+
+    pub fn insert(&mut self, key: Key, sets: FirstSets) -> Option<FirstSets> {
+        self.0.insert(key, sets)
+    }
+}
+
+impl fmt::Display for FirstTable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        "First Sets\n".bold().fmt(f)?;
+
+        for (key, sets) in &self.0 {
+            writeln!(f, "{}", key.italic())?;
+
+            for (id, set) in sets {
+                for terminals in set {
+                    write!(f, "\t{id}:")?;
+                    for t in terminals {
+                        write!(f, " {t}")?;
+                    }
+                    write!(f, "\n")?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl Index<&Key> for FirstTable {
+    type Output = FirstSets;
+
+    fn index(&self, index: &Key) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+type FirstItem = (Id, (Terminals, VecDeque<Symbol>));
+
+impl Grammar {
     fn first_k_of(
         &self,
         k: usize,
         of: Key,
         queue: &mut VecDeque<Key>,
-        cache: &mut HashMap<Key, Vec<FirstItem<Key>>>,
+        cache: &mut HashMap<Key, Vec<FirstItem>>,
     ) {
         if cache[&of]
             .iter()
@@ -70,7 +123,7 @@ impl<Key: Clone + Eq + Hash> Grammar<Key> {
         cache.insert(of, items);
     }
 
-    pub fn first_k(&self, k: usize) -> FirstTable<Key> {
+    pub fn first_k(&self, k: usize) -> FirstTable {
         let mut queue = VecDeque::new();
         let mut cache = HashMap::new();
         let mut table = FirstTable::new();
@@ -108,24 +161,25 @@ mod test {
 
     use crate::{
         builder::Syntactical,
-        grammar::{Grammar, Id, Rule, Symbol, Terminal, TypeName},
+        grammar::{Grammar, Id, Key, Rule, Symbol, Terminal},
     };
 
+    #[allow(dead_code)]
     enum A {
         Recurse((u8, Box<Self>)),
         End,
     }
 
     impl Syntactical for A {
-        fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
-            let key = TypeName::of::<Self>();
-            let symbol = Symbol::nonterminal(key);
+        fn generate(grammar: &mut Grammar, stack: &mut Vec<Key>) -> Symbol {
+            let key = Key::of::<Self>();
+            let symbol = Symbol::nonterminal(key.clone());
 
             if !Self::visited(grammar, stack) {
-                stack.push(key);
+                stack.push(key.clone());
 
                 let mut rule = Rule::new();
-                rule.insert(Id(0), vec![u8::generate(grammar, stack), symbol]);
+                rule.insert(Id(0), vec![u8::generate(grammar, stack), symbol.clone()]);
                 rule.insert(Id(1), vec![Symbol::Epsilon]);
 
                 grammar.insert(key, rule);
@@ -137,17 +191,17 @@ mod test {
 
     #[test]
     fn first_1() {
-        let mut grammar = Grammar::new(TypeName::of::<A>());
+        let mut grammar = Grammar::new(Key::of::<A>());
         let mut stack = Vec::new();
 
         A::generate(&mut grammar, &mut stack);
 
         let first_table = grammar.first_k(1);
-        let first_sets = &first_table[&TypeName::of::<A>()];
+        let first_sets = &first_table[&Key::of::<A>()];
 
         let recurse = &first_sets[&Id(0)];
         assert_eq!(recurse.len(), 1);
-        assert!(recurse.contains(&vec![Terminal::from(TypeName::of::<u8>())]));
+        assert!(recurse.contains(&vec![Terminal::from(Key::of::<u8>())]));
 
         let end = &first_sets[&Id(1)];
         assert_eq!(end.len(), 1);
@@ -156,21 +210,21 @@ mod test {
 
     #[test]
     fn first_2() {
-        let mut grammar = Grammar::new(TypeName::of::<A>());
+        let mut grammar = Grammar::new(Key::of::<A>());
         let mut stack = Vec::new();
 
         A::generate(&mut grammar, &mut stack);
 
         let first_table = grammar.first_k(2);
-        let first_sets = &first_table[&TypeName::of::<A>()];
+        let first_sets = &first_table[&Key::of::<A>()];
 
         let recurse = &first_sets[&Id(0)];
         assert_eq!(recurse.len(), 2);
         assert!(recurse.contains(&vec![
-            Terminal::from(TypeName::of::<u8>()),
-            Terminal::from(TypeName::of::<u8>()),
+            Terminal::from(Key::of::<u8>()),
+            Terminal::from(Key::of::<u8>()),
         ]));
-        assert!(recurse.contains(&vec![Terminal::from(TypeName::of::<u8>()),]));
+        assert!(recurse.contains(&vec![Terminal::from(Key::of::<u8>()),]));
 
         let end = &first_sets[&Id(1)];
         assert_eq!(end.len(), 1);
@@ -179,26 +233,26 @@ mod test {
 
     #[test]
     fn first_3() {
-        let mut grammar = Grammar::new(TypeName::of::<A>());
+        let mut grammar = Grammar::new(Key::of::<A>());
         let mut stack = Vec::new();
 
         A::generate(&mut grammar, &mut stack);
 
         let first_table = grammar.first_k(3);
-        let first_sets = &first_table[&TypeName::of::<A>()];
+        let first_sets = &first_table[&Key::of::<A>()];
 
         let recurse = &first_sets[&Id(0)];
         assert_eq!(recurse.len(), 3);
         assert!(recurse.contains(&vec![
-            Terminal::from(TypeName::of::<u8>()),
-            Terminal::from(TypeName::of::<u8>()),
-            Terminal::from(TypeName::of::<u8>()),
+            Terminal::from(Key::of::<u8>()),
+            Terminal::from(Key::of::<u8>()),
+            Terminal::from(Key::of::<u8>()),
         ]));
         assert!(recurse.contains(&vec![
-            Terminal::from(TypeName::of::<u8>()),
-            Terminal::from(TypeName::of::<u8>()),
+            Terminal::from(Key::of::<u8>()),
+            Terminal::from(Key::of::<u8>()),
         ]));
-        assert!(recurse.contains(&vec![Terminal::from(TypeName::of::<u8>())]));
+        assert!(recurse.contains(&vec![Terminal::from(Key::of::<u8>())]));
 
         let end = &first_sets[&Id(1)];
         assert_eq!(end.len(), 1);

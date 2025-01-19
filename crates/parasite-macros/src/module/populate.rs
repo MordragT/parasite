@@ -20,15 +20,15 @@ pub const COLLECTION_MAPS: &'static [&'static str] = &["HashMap", "BTreeMap"];
 pub fn populate(
     key: TypeKey,
     productions: &HashMap<TypeKey, Item>,
-    grammar: &mut Grammar<TypeKey>,
+    grammar: &mut Grammar,
     stack: &mut Vec<TypeKey>,
     terminals: &Vec<TypeKey>,
-) -> Symbol<TypeKey> {
+) -> Symbol {
     if terminals.contains(&key) {
-        return Symbol::terminal(key.clone());
+        return Symbol::terminal(key.into());
     }
 
-    let symbol = Symbol::nonterminal(key.clone());
+    let symbol = Symbol::nonterminal(key.clone().into());
 
     if !visited(&key, grammar, stack) {
         stack.push(key.clone());
@@ -71,7 +71,7 @@ pub fn populate(
             }
         };
 
-        grammar.insert(key, rule);
+        grammar.insert(key.into(), rule);
     }
 
     symbol
@@ -80,10 +80,10 @@ pub fn populate(
 fn fields_symbols(
     fields: &Fields,
     productions: &HashMap<TypeKey, Item>,
-    grammar: &mut Grammar<TypeKey>,
+    grammar: &mut Grammar,
     stack: &mut Vec<TypeKey>,
     terminals: &Vec<TypeKey>,
-) -> Vec<Symbol<TypeKey>> {
+) -> Vec<Symbol> {
     let mut symbols = Vec::new();
 
     for field in fields {
@@ -96,13 +96,13 @@ fn fields_symbols(
 }
 
 fn collection_rule(
-    collection: Symbol<TypeKey>,
+    collection: Symbol,
     ty: Type,
     productions: &HashMap<TypeKey, Item>,
-    grammar: &mut Grammar<TypeKey>,
+    grammar: &mut Grammar,
     stack: &mut Vec<TypeKey>,
     terminals: &Vec<TypeKey>,
-) -> Rule<TypeKey> {
+) -> Rule {
     let ty_key = ty.try_into().unwrap();
 
     let mut rule = Rule::new();
@@ -121,10 +121,10 @@ fn collection_rule(
 fn tuple_rule(
     tuple: TypeTuple,
     productions: &HashMap<TypeKey, Item>,
-    grammar: &mut Grammar<TypeKey>,
+    grammar: &mut Grammar,
     stack: &mut Vec<TypeKey>,
     terminals: &Vec<TypeKey>,
-) -> Rule<TypeKey> {
+) -> Rule {
     let mut rule = Rule::new();
     rule.insert(
         Id(0),
@@ -144,18 +144,24 @@ fn tuple_rule(
 fn path_rule(
     type_path: TypePath,
     productions: &HashMap<TypeKey, Item>,
-    grammar: &mut Grammar<TypeKey>,
+    grammar: &mut Grammar,
     stack: &mut Vec<TypeKey>,
     terminals: &Vec<TypeKey>,
-) -> Rule<TypeKey> {
+) -> Rule {
     let mut rule = Rule::new();
 
     if let Some(ident) = type_path.path.get_ident() {
         if PRIMITIVES.contains(&ident.to_string().as_str()) {
-            rule.insert(Id(0), vec![Symbol::terminal(TypeKey::new(ident.clone()))]);
+            rule.insert(
+                Id(0),
+                vec![Symbol::terminal(TypeKey::new(ident.clone()).into())],
+            );
         } else {
             // warning treat ident as terminal
-            rule.insert(Id(0), vec![Symbol::terminal(TypeKey::new(ident.clone()))]);
+            rule.insert(
+                Id(0),
+                vec![Symbol::terminal(TypeKey::new(ident.clone()).into())],
+            );
         }
     } else {
         // maybe option, vec etc.
@@ -195,7 +201,7 @@ fn path_rule(
                 _ => panic!(),
             };
 
-            let symbol = Symbol::nonterminal(TypeKey::Path(type_path));
+            let symbol = Symbol::nonterminal(TypeKey::Path(type_path).into());
 
             return collection_rule(symbol, child_ty, productions, grammar, stack, terminals);
         } else if COLLECTION_MAPS.contains(&ident_str.as_str()) {
@@ -224,7 +230,7 @@ fn path_rule(
                 paren_token: Paren::default(),
                 elems,
             });
-            let symbol = Symbol::nonterminal(TypeKey::Path(type_path));
+            let symbol = Symbol::nonterminal(TypeKey::Path(type_path).into());
 
             return collection_rule(symbol, child_ty, productions, grammar, stack, terminals);
         } else {
@@ -235,6 +241,6 @@ fn path_rule(
     rule
 }
 
-fn visited(key: &TypeKey, grammar: &Grammar<TypeKey>, stack: &Vec<TypeKey>) -> bool {
-    grammar.contains(key) || stack.contains(key)
+fn visited(key: &TypeKey, grammar: &Grammar, stack: &Vec<TypeKey>) -> bool {
+    grammar.contains(&key.clone().into()) || stack.contains(key)
 }

@@ -2,23 +2,23 @@ use std::marker::PhantomData;
 
 use crate::{
     builder::Syntactical,
-    grammar::{Grammar, Id, Rule, Symbol, TypeName},
+    grammar::{Grammar, Id, Key, Rule, Symbol},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Rec<T>(pub Box<T>);
 
 impl<T: Syntactical + 'static> Syntactical for Rec<T> {
-    fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
-        let key = TypeName::of::<Self>();
+    fn generate(grammar: &mut Grammar, stack: &mut Vec<Key>) -> Symbol {
+        let key = Key::of::<Self>();
 
         if !Self::visited(grammar, stack) {
-            stack.push(key);
+            stack.push(key.clone());
 
             let mut rule = Rule::new();
             rule.insert(Id(0), vec![T::generate(grammar, stack)]);
 
-            grammar.insert(key, rule);
+            grammar.insert(key.clone(), rule);
         }
         Symbol::nonterminal(key)
     }
@@ -28,12 +28,12 @@ impl<T: Syntactical + 'static> Syntactical for Rec<T> {
 pub struct NonEmptyVec<T>(pub Vec<T>);
 
 impl<T: Syntactical + 'static> Syntactical for NonEmptyVec<T> {
-    fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
-        let key = TypeName::of::<Self>();
-        let symbol = Symbol::nonterminal(key);
+    fn generate(grammar: &mut Grammar, stack: &mut Vec<Key>) -> Symbol {
+        let key = Key::of::<Self>();
+        let symbol = Symbol::nonterminal(key.clone());
 
         if !Self::visited(grammar, stack) {
-            stack.push(key);
+            stack.push(key.clone());
 
             let mut rule = Rule::new();
             rule.insert(
@@ -55,8 +55,8 @@ impl<T: Syntactical + 'static> Syntactical for NonEmptyVec<T> {
 pub struct Just<const CHAR: char>();
 
 impl<const CHAR: char> Syntactical for Just<CHAR> {
-    fn generate(_grammar: &mut Grammar, _stack: &mut Vec<TypeName>) -> Symbol {
-        Symbol::terminal(TypeName::of::<Self>())
+    fn generate(_grammar: &mut Grammar, _stack: &mut Vec<Key>) -> Symbol {
+        Symbol::terminal(Key::of::<Self>())
     }
 }
 
@@ -70,12 +70,12 @@ impl<S, T> SeparatedBy<S, T> {
 }
 
 impl<T: Syntactical + 'static, S: Syntactical + 'static> Syntactical for SeparatedBy<S, T> {
-    fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
-        let key = TypeName::of::<Self>();
-        let symbol = Symbol::nonterminal(key);
+    fn generate(grammar: &mut Grammar, stack: &mut Vec<Key>) -> Symbol {
+        let key = Key::of::<Self>();
+        let symbol = Symbol::nonterminal(key.clone());
 
         if !Self::visited(grammar, stack) {
-            stack.push(key);
+            stack.push(key.clone());
 
             let mut rule = Rule::new();
             rule.insert(
@@ -83,7 +83,7 @@ impl<T: Syntactical + 'static, S: Syntactical + 'static> Syntactical for Separat
                 vec![
                     T::generate(grammar, stack),
                     S::generate(grammar, stack),
-                    symbol,
+                    symbol.clone(),
                 ],
             );
             rule.insert(Id(1), vec![T::generate(grammar, stack)]);
@@ -105,18 +105,18 @@ impl<P, T> PaddedBy<P, T> {
 }
 
 impl<T: Syntactical + 'static, P: Syntactical + 'static> Syntactical for PaddedBy<P, T> {
-    fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
-        let key = TypeName::of::<Self>();
+    fn generate(grammar: &mut Grammar, stack: &mut Vec<Key>) -> Symbol {
+        let key = Key::of::<Self>();
 
         if !Self::visited(grammar, stack) {
-            stack.push(key);
+            stack.push(key.clone());
 
             let pat = P::generate(grammar, stack);
 
             let mut rule = Rule::new();
-            rule.insert(Id(0), vec![pat, T::generate(grammar, stack), pat]);
+            rule.insert(Id(0), vec![pat.clone(), T::generate(grammar, stack), pat]);
 
-            grammar.insert(key, rule);
+            grammar.insert(key.clone(), rule);
         }
 
         Symbol::nonterminal(key)
@@ -135,11 +135,11 @@ impl<L, R, T> DelimitedBy<L, R, T> {
 impl<T: Syntactical + 'static, L: Syntactical + 'static, R: Syntactical + 'static> Syntactical
     for DelimitedBy<L, R, T>
 {
-    fn generate(grammar: &mut Grammar, stack: &mut Vec<TypeName>) -> Symbol {
-        let key = TypeName::of::<Self>();
+    fn generate(grammar: &mut Grammar, stack: &mut Vec<Key>) -> Symbol {
+        let key = Key::of::<Self>();
 
         if !Self::visited(grammar, stack) {
-            stack.push(key);
+            stack.push(key.clone());
 
             let mut rule = Rule::new();
             rule.insert(
@@ -151,7 +151,7 @@ impl<T: Syntactical + 'static, L: Syntactical + 'static, R: Syntactical + 'stati
                 ],
             );
 
-            grammar.insert(key, rule);
+            grammar.insert(key.clone(), rule);
         }
 
         Symbol::nonterminal(key)
@@ -162,7 +162,7 @@ impl<T: Syntactical + 'static, L: Syntactical + 'static, R: Syntactical + 'stati
 pub struct End;
 
 impl Syntactical for End {
-    fn generate(_grammar: &mut Grammar, _stack: &mut Vec<TypeName>) -> Symbol {
+    fn generate(_grammar: &mut Grammar, _stack: &mut Vec<Key>) -> Symbol {
         Symbol::Epsilon
     }
 }
@@ -171,8 +171,8 @@ impl Syntactical for End {
 pub struct Any(pub char);
 
 impl Syntactical for Any {
-    fn generate(_grammar: &mut Grammar, _stack: &mut Vec<TypeName>) -> Symbol {
-        Symbol::terminal(TypeName::of::<Self>())
+    fn generate(_grammar: &mut Grammar, _stack: &mut Vec<Key>) -> Symbol {
+        Symbol::terminal(Key::of::<Self>())
     }
 }
 
@@ -180,8 +180,8 @@ impl Syntactical for Any {
 pub struct NewLine;
 
 impl Syntactical for NewLine {
-    fn generate(_grammar: &mut Grammar, _stack: &mut Vec<TypeName>) -> Symbol {
-        Symbol::terminal(TypeName::of::<Self>())
+    fn generate(_grammar: &mut Grammar, _stack: &mut Vec<Key>) -> Symbol {
+        Symbol::terminal(Key::of::<Self>())
     }
 }
 
@@ -189,8 +189,8 @@ impl Syntactical for NewLine {
 pub struct WhiteSpace;
 
 impl Syntactical for WhiteSpace {
-    fn generate(_grammar: &mut Grammar, _stack: &mut Vec<TypeName>) -> Symbol {
-        Symbol::terminal(TypeName::of::<Self>())
+    fn generate(_grammar: &mut Grammar, _stack: &mut Vec<Key>) -> Symbol {
+        Symbol::terminal(Key::of::<Self>())
     }
 }
 
@@ -198,7 +198,7 @@ impl Syntactical for WhiteSpace {
 pub struct Identifier(pub String);
 
 impl Syntactical for Identifier {
-    fn generate(_grammar: &mut Grammar, _stack: &mut Vec<TypeName>) -> Symbol {
-        Symbol::terminal(TypeName::of::<Self>())
+    fn generate(_grammar: &mut Grammar, _stack: &mut Vec<Key>) -> Symbol {
+        Symbol::terminal(Key::of::<Self>())
     }
 }

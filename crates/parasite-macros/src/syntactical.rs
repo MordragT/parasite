@@ -22,16 +22,16 @@ pub fn syntactical_impl(parsed: DeriveInput) -> ItemImpl {
 
     syn::parse_quote!(
         impl parasite::builder::Syntactical for #ident {
-            fn generate(grammar: &mut parasite::grammar::Grammar, stack: &mut Vec<parasite::grammar::TypeName>) -> parasite::grammar::Symbol {
-                let key = parasite::grammar::TypeName::of::<Self>();
+            fn generate(grammar: &mut parasite::grammar::Grammar, stack: &mut Vec<parasite::grammar::Key>) -> parasite::grammar::Symbol {
+                let key = parasite::grammar::Key::of::<Self>();
 
                 if !Self::visited(grammar, stack) {
-                    stack.push(key);
+                    stack.push(key.clone());
 
                     let mut rule = parasite::grammar::Rule::new();
                     #rule_stmts
 
-                    grammar.insert(key, rule);
+                    grammar.insert(key.clone(), rule);
                 }
 
                 parasite::grammar::Symbol::nonterminal(key)
